@@ -8,7 +8,7 @@
 ENGLISH := english
 
 ifdef WAVEFORM_BUILD
-WAVEFORM_LANG_DIR ?= $(BUILDDIR)/generated/lang
+WAVEFORM_LANG_DIR ?= $(ROOTDIR)/build-waveform/generated/lang
 LANG_GEN_H := $(WAVEFORM_LANG_DIR)/lang.h
 LANG_GEN_C := $(WAVEFORM_LANG_DIR)/lang_core.c
 LANG_ENUM_H := $(WAVEFORM_LANG_DIR)/lang_enum.h

@@ -6,7 +6,7 @@ endif
 PRINTS=$(SILENT)$(call info,$(1))
 
 ifdef WAVEFORM_BUILD
-WAVEFORM_LANG_DIR ?= $(BUILDDIR)/generated/lang
+WAVEFORM_LANG_DIR ?= $(ROOTDIR)/build-waveform/generated/lang
 LANG_H_DEP := $(WAVEFORM_LANG_DIR)/lang.h
 else
 LANG_H_DEP := $(OBJDIR)/lang/lang.h
