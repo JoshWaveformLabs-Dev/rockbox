@@ -5,6 +5,13 @@ SILENT=@
 endif
 PRINTS=$(SILENT)$(call info,$(1))
 
+ifdef WAVEFORM_BUILD
+WAVEFORM_LANG_DIR ?= $(BUILDDIR)/generated/lang
+LANG_H_DEP := $(WAVEFORM_LANG_DIR)/lang.h
+else
+LANG_H_DEP := $(OBJDIR)/lang/lang.h
+endif
+
 $(OBJDIR)/%.o: %.c
 	$(SILENT)mkdir -p $(dir $@)
 	$(call PRINTS,CC $<)$(CC) $(CFLAGS) -c $< -o $@
@@ -45,7 +52,7 @@ $(DEPFILE): $(SOURCES)
 	        rm $$del; \
 	        del=""; \
 	    fi \
-	done | sed -e "s:[^[:space:]]*lang.h:$(OBJDIR)/lang/lang.h:" \
+	done | sed -e "s:[^[:space:]]*lang.h:$(LANG_H_DEP):" \
 	-e "s:[^[:space:]]*sysfont.h:$(BUILDDIR)/sysfont.h:" \
 	-e "s:[^[:space:]]*max_language_size.h:$(BUILDDIR)/max_language_size.h:" \
 	-e "s: bitmaps/: $(BUILDDIR)/bitmaps/:g" \

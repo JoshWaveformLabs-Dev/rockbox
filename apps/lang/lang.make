@@ -12,6 +12,16 @@ LANGOBJ := $(LANGS:$(ROOTDIR)/%.lang=$(BUILDDIR)/%.lng)
 VOICEOBJ := $(LANGS:$(ROOTDIR)/%.lang=$(BUILDDIR)/%.vstrings)
 LANG_O = $(BUILDDIR)/lang/lang_core.o
 ENGLISH := english
+ifdef WAVEFORM_BUILD
+WAVEFORM_LANG_DIR ?= $(BUILDDIR)/generated/lang
+LANG_GEN_H := $(WAVEFORM_LANG_DIR)/lang.h
+LANG_GEN_C := $(WAVEFORM_LANG_DIR)/lang_core.c
+LANG_ENUM_H := $(WAVEFORM_LANG_DIR)/lang_enum.h
+else
+LANG_GEN_H := $(BUILDDIR)/lang/lang.h
+LANG_GEN_C := $(BUILDDIR)/lang/lang_core.c
+LANG_ENUM_H := $(BUILDDIR)/lang_enum.h
+endif
 
 CLEANOBJS += $(BUILDDIR)/lang/max_language_size.h $(BUILDDIR)/lang/lang*
 
@@ -29,20 +39,27 @@ $(BUILDDIR)/lang/max_language_size.h: $(LANGOBJ) $(BUILDDIR)/apps/lang/voicestri
 	$(call PRINTS,GEN $(subst $(BUILDDIR)/,,$@))
 	$(SILENT)echo "#define MAX_LANGUAGE_SIZE `ls -ln $(BUILDDIR)/apps/lang/*.lng | awk '{print $$5-10}' | sort -n | tail -1`" > $@
 
-$(BUILDDIR)/lang/lang_core.o: $(BUILDDIR)/lang/lang.h $(BUILDDIR)/lang/lang_core.c
-	$(call PRINTS,CC lang_core.c)$(CC) $(CFLAGS) -c $(BUILDDIR)/lang/lang_core.c -o $@
+$(BUILDDIR)/lang/lang_core.o: $(LANG_GEN_H) $(LANG_GEN_C)
+	$(call PRINTS,CC lang_core.c)$(CC) $(CFLAGS) -c $(LANG_GEN_C) -o $@
 
 # genlang creates *both* lang.c and lang.h but in Make there is no wat to express this rule
 # (multiple target rules DO NOT express that, they are a simple shortcut for multiple rules)
 # instead we pretend that genlang create lang_core.c and that lang.c depends from lang.h
 # it will work fine as long as one never manually removes lang.c and not lang.h, and it will avoid
 # race conditions such as running genlang twice or worse in parallel with other things!
+ifneq ($(WAVEFORM_BUILD),1)
 $(BUILDDIR)/lang/lang.h: $(APPSDIR)/lang/$(ENGLISH).lang $(BUILDDIR)/apps/genlang-features $(TOOLSDIR)/genlang
 	$(call PRINTS,GEN lang.h)
 	$(SILENT)$(TOOLSDIR)/genlang -e=$(APPSDIR)/lang/$(ENGLISH).lang -p=$(BUILDDIR)/lang -t=$(MODELNAME):`cat $(BUILDDIR)/apps/genlang-features` $<
 $(BUILDDIR)/lang/lang_core.c: $(BUILDDIR)/lang/lang.h $(TOOLSDIR)/genlang
 
 $(BUILDDIR)/lang_enum.h: $(BUILDDIR)/lang/lang.h $(TOOLSDIR)/genlang
+else
+$(LANG_GEN_H) $(LANG_GEN_C) $(LANG_ENUM_H):
+	$(SILENT)echo "*** Missing Waveform-generated language artifacts."
+	$(SILENT)echo "*** Run: python tools/waveform_build.py generate"
+	$(SILENT)exit 1
+endif
 
 # NOTE: for some weird reasons in GNU make, multi targets rules WITH patterns actually express
 # the fact that the two files are created as the result of one invocation of the rule
@@ -57,7 +74,7 @@ $(BUILDDIR)/apps/lang/voice-corrections.txt: $(ROOTDIR)/tools/voice-corrections.
 	$(SILENT)mkdir -p $(dir $@)
 	$(call PRINTS,CP $(subst $(ROOTDIR)/,,$<))cp $< $@
 
-$(BUILDDIR)/apps/lang/lang-enum.txt: $(BUILDDIR)/lang_enum.h
+$(BUILDDIR)/apps/lang/lang-enum.txt: $(LANG_ENUM_H)
 	$(SILENT)mkdir -p $(dir $@)
 	$(call PRINTS,GEN $(subst $(BUILDDIR)/,,$@))perl -ne 'print if s|\s+(.*), /\* (\w+).*|$$2:$$1|' < $<  |grep -v 'this:' > $@
 

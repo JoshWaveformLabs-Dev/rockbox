@@ -7,6 +7,17 @@
 
 ENGLISH := english
 
+ifdef WAVEFORM_BUILD
+WAVEFORM_LANG_DIR ?= $(BUILDDIR)/generated/lang
+LANG_GEN_H := $(WAVEFORM_LANG_DIR)/lang.h
+LANG_GEN_C := $(WAVEFORM_LANG_DIR)/lang_core.c
+LANG_ENUM_H := $(WAVEFORM_LANG_DIR)/lang_enum.h
+else
+LANG_GEN_H := $(BUILDDIR)/lang/lang.h
+LANG_GEN_C := $(BUILDDIR)/lang/lang_core.c
+LANG_ENUM_H := $(BUILDDIR)/lang_enum.h
+endif
+
 # Use global GCCOPTS
 GCCOPTS += -D__PCTOOL__ -DCHECKWPS
 
@@ -32,6 +43,9 @@ INCLUDES = -I$(ROOTDIR)/apps/gui \
            -I$(BUILDDIR) \
            -I$(BUILDDIR)/lang \
            $(TARGET_INC)
+ifdef WAVEFORM_BUILD
+INCLUDES += -I$(WAVEFORM_LANG_DIR)
+endif
 
 .SECONDEXPANSION: # $$(OBJ) is not populated until after this
 
@@ -60,6 +74,7 @@ $(BUILDDIR)/apps/features: $(ROOTDIR)/apps/features.txt
 $(BUILDDIR)/apps/genlang-features:  $(BUILDDIR)/apps/features
 	$(call PRINTS,GEN $(subst $(BUILDDIR)/,,$@))tr \\n : < $< > $@
 
+ifneq ($(WAVEFORM_BUILD),1)
 $(BUILDDIR)/lang_enum.h: $(BUILDDIR)/lang/lang.h $(TOOLSDIR)/genlang
 
 $(BUILDDIR)/lang/lang.h: $(ROOTDIR)/apps/lang/$(ENGLISH).lang $(BUILDDIR)/apps/features $(TOOLSDIR)/genlang $(BUILDDIR)/apps/genlang-features
@@ -67,10 +82,16 @@ $(BUILDDIR)/lang/lang.h: $(ROOTDIR)/apps/lang/$(ENGLISH).lang $(BUILDDIR)/apps/f
 	$(SILENT)$(TOOLSDIR)/genlang -e=$(ROOTDIR)/apps/lang/$(ENGLISH).lang -p=$(BUILDDIR)/lang -t=$(MODELNAME):`cat $(BUILDDIR)/apps/genlang-features` $<
 
 $(BUILDDIR)/lang/lang_core.c: $(BUILDDIR)/lang/lang.h $(TOOLSDIR)/genlang
+else
+$(LANG_GEN_H) $(LANG_GEN_C) $(LANG_ENUM_H):
+	$(SILENT)echo "*** Missing Waveform-generated language artifacts."
+	$(SILENT)echo "*** Run: python tools/waveform_build.py generate"
+	$(SILENT)exit 1
+endif
 
-$(BUILDDIR)/lang/lang_core.o: $(BUILDDIR)/lang/lang.h $(BUILDDIR)/lang/lang_core.c
-	$(call PRINTS,CC lang_core.c)$(CC) $(CFLAGS) -c $(BUILDDIR)/lang/lang_core.c -o $@
+$(BUILDDIR)/lang/lang_core.o: $(LANG_GEN_H) $(LANG_GEN_C)
+	$(call PRINTS,CC lang_core.c)$(CC) $(CFLAGS) -c $(LANG_GEN_C) -o $@
 
-$(BUILDDIR)/lang/max_language_size.h: $(BUILDDIR)/lang/lang.h
+$(BUILDDIR)/lang/max_language_size.h: $(LANG_GEN_H)
 	$(call PRINTS,GEN $(subst $(BUILDDIR)/,,$@))
 	$(SILENT)echo "#define MAX_LANGUAGE_SIZE 131072" > $@

@@ -11,6 +11,8 @@ PUZZLES_SRCDIR = $(APPSDIR)/plugins/puzzles
 PUZZLES_OBJDIR = $(BUILDDIR)/apps/plugins/puzzles
 
 PUZZLES_SHARED_SRC = $(call preprocess, $(PUZZLES_SRCDIR)/SOURCES)
+LANG_ENUM_H ?= $(BUILDDIR)/lang_enum.h
+
 PUZZLES_SHARED_OBJ = $(call c2obj, $(PUZZLES_SHARED_SRC))
 
 PUZZLES_GAMES_SRC = $(call preprocess, $(PUZZLES_SRCDIR)/SOURCES.games)
@@ -63,7 +65,7 @@ $(PUZZLES_SRCDIR)/rbcompat.h:	$(APPSDIR)/plugin.h			\
 				$(BUILDDIR)/sysfont.h			\
 				$(PUZZLES_SRCDIR)/rbassert.h		\
 				$(TLSFLIB_DIR)/src/tlsf.h \
-				$(BUILDDIR)/lang_enum.h
+				$(LANG_ENUM_H)
 
 # special pattern rule for compiling puzzles with extra flags
 $(PUZZLES_OBJDIR)/%.o: $(PUZZLES_SRCDIR)/%.c $(PUZZLES_SRCDIR)/puzzles.make $(PUZZLES_SRCDIR)/rbcompat.h
