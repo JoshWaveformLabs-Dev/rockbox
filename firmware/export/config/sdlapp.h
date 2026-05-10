@@ -64,6 +64,7 @@
 #undef HAVE_VOICE_THREAD      /* Waveform m2: voice/talk UI stripped */
 #undef HAVE_TAGCACHE          /* Waveform m4: tagcache/database stripped */
 #undef HAVE_RECORDING         /* Waveform m6: recording stripped */
+#undef HAVE_FMRADIO           /* Waveform m7: FM radio stripped */
 
 #define AB_REPEAT_ENABLE
 
