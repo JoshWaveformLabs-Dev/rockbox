@@ -34,7 +34,9 @@
 #include "pcm_record.h"
 #endif
 #include "codec_thread.h"
+#ifdef HAVE_VOICE_THREAD
 #include "voice_thread.h"
+#endif
 #include "talk.h"
 #include "settings.h"
 
@@ -100,7 +102,9 @@ static void NORETURN_ATTR audio_thread(void)
         /* All return upon USB */
         case SYS_USB_CONNECTED:
             LOGFQUEUE("audio < SYS_USB_CONNECTED");
+#ifdef HAVE_VOICE_THREAD
             voice_stop();
+#endif
             usb_acknowledge(SYS_USB_CONNECTED_ACK, ev.data);
             usb_wait_for_disconnect(&audio_queue);
             break;

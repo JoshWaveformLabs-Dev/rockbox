@@ -458,7 +458,9 @@ static bool clean_shutdown(enum shutdown_type sd_type,
                 enqueue = true;
             }
             talk_id(LANG_SHUTTINGDOWN, enqueue);
+#ifdef HAVE_VOICE_THREAD
             voice_wait();
+#endif
         }
 
         shutdown_hw(sd_type);

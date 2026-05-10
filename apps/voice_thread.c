@@ -33,6 +33,8 @@
 #include "codecs/libspeex/speex/speex.h"
 #include "settings.h"
 
+#ifdef HAVE_VOICE_THREAD
+
 /* Default number of PCM frames to queue - adjust as necessary per-target */
 #define VOICE_FRAMES 4
 
@@ -613,3 +615,20 @@ void voice_thread_set_priority(int priority)
     thread_set_priority(voice_thread_id, priority);
 }
 #endif
+
+#else /* !HAVE_VOICE_THREAD */
+
+void voice_play_data(const void *start, size_t size,
+                     voice_play_callback_t get_more)
+    { (void)start; (void)size; (void)get_more; }
+void voice_play_stop(void) {}
+void voice_wait(void) {}
+void voice_stop(void) {}
+void voice_thread_init(void) {}
+void voice_thread_kill(void) {}
+void voice_set_mixer_level(int percent) { (void)percent; }
+#ifdef HAVE_PRIORITY_SCHEDULING
+void voice_thread_set_priority(int priority) { (void)priority; }
+#endif
+
+#endif /* HAVE_VOICE_THREAD */

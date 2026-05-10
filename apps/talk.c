@@ -682,6 +682,7 @@ static inline bool is_silence(struct queue_entry *qe)
         return false;
 }
 
+#ifdef HAVE_VOICE_THREAD
 /* called in ISR context (on HWCODEC) if mp3 data got consumed */
 static void mp3_callback(const void** start, size_t* size)
 {
@@ -729,6 +730,7 @@ static void mp3_callback(const void** start, size_t* size)
 
     talk_queue_unlock();
 }
+#endif /* HAVE_VOICE_THREAD */
 
 /***************** Private routines *****************/
 
@@ -847,7 +849,9 @@ static int talk_year(long year, bool enqueue)
 void talk_force_shutup(void)
 {
     /* Had nothing to do (was frame boundary or not our clip) */
+#ifdef HAVE_VOICE_THREAD
     voice_play_stop();
+#endif
     talk_queue_lock();
     queue_write = queue_read = 0; /* reset the queue */
     thumbnail_buf_used = 0;
@@ -892,7 +896,11 @@ static void queue_clip(struct queue_entry *clip, bool enqueue)
         size_t size;
         void *buf = commit_transfer(qe, &size);
         last_clip = qe;
+#ifdef HAVE_VOICE_THREAD
         voice_play_data(buf, size, mp3_callback);
+#else
+        (void)buf; (void)size;
+#endif
         curr_hd[0] = commit_buffer[1];
         curr_hd[1] = commit_buffer[2];
         curr_hd[2] = commit_buffer[3];
@@ -988,8 +996,10 @@ void talk_init(void)
     load_voicefile_data(filehandle);
 
     /* Initialize the actual voice clip playback engine as well */
+#ifdef HAVE_VOICE_THREAD
     if (talk_voice_required())
         voice_thread_init();
+#endif
 
 out:
     if (filehandle >= 0)
@@ -1680,11 +1690,15 @@ void talk_announce_voice_invalid(void)
 
         if (read_to_handle_ex(voice_fd, &clip_ctx, buf_handle, 0, voice_sz) > 0)
         {
+#ifdef HAVE_VOICE_THREAD
             voice_thread_init();
+#endif
             qe.handle = buf_handle;
             qe.length = qe.remaining = voice_sz;
             queue_clip(&qe, false);
+#ifdef HAVE_VOICE_THREAD
             voice_wait();
+#endif
         }
 
         mutex_unlock(&read_buffer_mutex);
