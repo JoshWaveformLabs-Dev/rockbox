@@ -63,4 +63,12 @@ extern bool showremote;
 extern double display_zoom;
 extern long start_tick;
 
+#ifdef WIN32
+#include <time.h>
+#include <stdlib.h>
+struct tm * gmtime_r(const time_t *restrict timer, struct tm *restrict result);
+struct tm * localtime_r(const time_t *restrict timer, struct tm *restrict result);
+char * realpath(const char *path, char *resolved);
+#endif /* WIN32 */
+
 #endif /* _SYSTEM_SDL_H_ */

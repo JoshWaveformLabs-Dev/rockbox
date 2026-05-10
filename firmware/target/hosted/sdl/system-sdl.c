@@ -28,6 +28,10 @@
 #ifdef __unix__
 #include <unistd.h>
 #endif
+#ifdef WIN32
+#include <time.h>
+#include <errno.h>
+#endif
 #include "system.h"
 #include "kernel.h"
 #include "thread-sdl.h"
@@ -417,3 +421,29 @@ void sys_handle_argv(int argc, char *argv[])
     }
 #endif
 }
+
+#ifdef WIN32
+/* POSIX compat shims — not provided by MinGW for non-SIMULATOR SDL builds */
+char * realpath(const char *path, char *resolved)
+{
+    return _fullpath(resolved, path, PATH_MAX);
+}
+
+struct tm * gmtime_r(const time_t *restrict timer, struct tm *restrict result)
+{
+    if (!timer || !result) { errno = EINVAL; return NULL; }
+    struct tm *tm = gmtime(timer);
+    if (!tm) return NULL;
+    *result = *tm;
+    return result;
+}
+
+struct tm * localtime_r(const time_t *restrict timer, struct tm *restrict result)
+{
+    if (!timer || !result) { errno = EINVAL; return NULL; }
+    struct tm *tm = localtime(timer);
+    if (!tm) return NULL;
+    *result = *tm;
+    return result;
+}
+#endif /* WIN32 */

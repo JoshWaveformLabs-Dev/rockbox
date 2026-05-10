@@ -48,6 +48,14 @@ size_t strlcpy_utf16utf8(char *buffer, const unsigned short *utf16,
 
 #define OS_STAT_T       struct _stat
 
+#ifndef O_CLOEXEC
+#define O_CLOEXEC 0 /* no-op on Windows */
+#endif
+
+#ifndef S_ISLNK
+#define S_ISLNK(m) 0 /* Windows has no POSIX symlinks */
+#endif
+
 #ifndef OSFUNCTIONS_DECLARED
 /* Wrap for off_t <=> long conversions */
 static inline off_t os_filesize_(int osfd)
@@ -74,6 +82,9 @@ int os_creat(const char *ospath, mode_t mode);
 int os_stat(const char *ospath, struct _stat *s);
 int os_remove(const char *ospath);
 int os_rename(const char *osold, const char *osnew);
+#define os_lstat        os_stat  /* no symlinks on Windows */
+static inline ssize_t os_readlink(const char *path, char *buf, size_t bufsiz)
+    { (void)path; (void)buf; (void)bufsiz; return -1; }
 
 #endif /* !OSFUNCTIONS_DECLARED */
 
