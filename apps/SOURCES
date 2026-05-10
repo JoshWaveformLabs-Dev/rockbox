@@ -60,6 +60,8 @@ talk.c
 tree.c
 #ifdef HAVE_TAGCACHE
 tagtree.c
+#else
+tagcache_stubs.c
 #endif
 filetree.c
 #ifdef IPOD_ACCESSORY_PROTOCOL

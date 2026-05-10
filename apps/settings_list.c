@@ -320,9 +320,9 @@ static const int backlight_fade[] = {0,100,200,300,500,1000,2000,3000,5000,10000
 static const char graphic_numeric[] = "graphic,numeric";
 
 /* Default theme settings */
-#define DEFAULT_WPSNAME  "cabbiev2"
+#define DEFAULT_WPSNAME  "waveform-default"
 #define DEFAULT_SBSNAME  "-"
-#define DEFAULT_FMS_NAME "cabbiev2"
+#define DEFAULT_FMS_NAME "-"
 
 #if LCD_HEIGHT <= 64
   #define DEFAULT_FONT_HEIGHT 8
@@ -401,7 +401,7 @@ static const char graphic_numeric[] = "graphic,numeric";
 #define DEFAULT_THEME_SELECTOR_TEXT LCD_RGBPACK(0x00, 0x00, 0x00)
 #define DEFAULT_THEME_SEPARATOR  LCD_RGBPACK(0x80, 0x80, 0x80)
 
-#define DEFAULT_BACKDROP    BACKDROP_DIR "/cabbiev2.bmp"
+#define DEFAULT_BACKDROP    "-"
 
 #ifdef HAVE_RECORDING
 /* these should be in the config.h files */

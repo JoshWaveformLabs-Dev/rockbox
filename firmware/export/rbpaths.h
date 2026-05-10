@@ -103,7 +103,7 @@
 #define VIEWERS_DATA_DIR         PLUGIN_DIR "/viewers"
 #endif
 
-#define WPS_DIR             ROCKBOX_DIR "/wps"
+#define WPS_DIR             ROCKBOX_DIR "/wps/waveform"
 #define SBS_DIR             WPS_DIR
 #define THEME_DIR           ROCKBOX_DIR "/themes"
 #define FONT_DIR            ROCKBOX_DIR "/fonts"
