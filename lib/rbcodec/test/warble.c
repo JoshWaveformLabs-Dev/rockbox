@@ -22,7 +22,10 @@
 #include <sys/types.h>
 #include <SDL.h>
 #include <dlfcn.h>
+#ifndef __MINGW32__
 #include <endian.h>
+#endif
+/* On MinGW, htole16/htole64 come from rbcodecplatform-unix.h via codecs.h */
 #include <fcntl.h>
 #include <math.h>
 #include <stdarg.h>
@@ -95,6 +98,12 @@ off_t filesize(int fd)
     return st.st_size;
 }
 
+void __assert(const char *file, int line, const char *expr)
+{
+    fprintf(stderr, "%s:%d: assertion failed: %s\n", file, line, expr);
+    abort();
+}
+
 /***************** INTERNAL *****************/
 
 static enum { MODE_PLAY, MODE_WRITE } mode;
@@ -135,7 +144,11 @@ static void write_init(const char *output_fn)
     if (!strcmp(output_fn, "-")) {
         output_fd = STDOUT_FILENO;
     } else {
+#ifdef _WIN32
+        output_fd = open(output_fn, O_WRONLY|O_CREAT|O_TRUNC|O_BINARY, S_IREAD|S_IWRITE);
+#else
         output_fd = creat(output_fn, 0666);
+#endif
         if (output_fd == -1) {
             perror(output_fn);
             exit(1);
@@ -773,7 +786,11 @@ static void decode_file(const char *input_fn)
     if (!strcmp(input_fn, "-")) {
         input_fd = STDIN_FILENO;
     } else {
+#ifdef _WIN32
+        input_fd = open(input_fn, O_RDONLY|O_BINARY);
+#else
         input_fd = open(input_fn, O_RDONLY);
+#endif
         if (input_fd == -1) {
             perror(input_fn);
             exit(1);

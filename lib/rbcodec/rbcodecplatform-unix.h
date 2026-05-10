@@ -20,6 +20,24 @@
 /* abs, atoi, strtol, strtoul, labs, rand */
 #include <stdlib.h>
 
+#ifdef __MINGW32__
+/* Windows/MinGW lacks byteswap.h and endian.h; use compiler builtins + LE assumption.
+ * x86_64 is little-endian; this matches all supported Windows targets. */
+#define swap16(x) __builtin_bswap16(x)
+#define swap32(x) __builtin_bswap32(x)
+#define swap64(x) __builtin_bswap64(x)
+#define betoh16(x) swap16(x)
+#define betoh32(x) swap32(x)
+#define letoh16(x) (x)
+#define letoh32(x) (x)
+#define htole16(x) (x)
+#define htole32(x) (x)
+#define htole64(x) (x)
+#define htobe16(x) swap16(x)
+#define htobe32(x) swap32(x)
+#define htobe64(x) swap64(x)
+#define ROCKBOX_LITTLE_ENDIAN 1
+#else
 /* swap16, swap32 */
 #include <byteswap.h>
 #ifndef swap16
@@ -48,6 +66,7 @@
 #else
 #define ROCKBOX_BIG_ENDIAN 1
 #endif
+#endif /* __MINGW32__ */
 
 /* filesize */
 off_t filesize(int fd);
