@@ -60,6 +60,7 @@
 
 /* The number of bytes reserved for loadable plugins */
 #define PLUGIN_BUFFER_SIZE 0x80000
+#undef HAVE_ROCKBOX_PLUGINS   /* Waveform m1: all plugins stripped */
 
 #define AB_REPEAT_ENABLE
 

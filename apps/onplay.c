@@ -664,8 +664,10 @@ MENUITEM_FUNCTION(rating_item, 0, ID2P(LANG_MENU_SET_RATING),
                   set_rating_inline,
                   ratingitem_callback, Icon_Questionmark);
 #endif
+#ifdef HAVE_ROCKBOX_PLUGINS
 MENUITEM_RETURNVALUE(plugin_item, ID2P(LANG_OPEN_PLUGIN),
                   GO_TO_PLUGIN, NULL, Icon_Plugin);
+#endif
 
 static bool view_cue(void)
 {
@@ -1123,7 +1125,9 @@ MAKE_ONPLAYMENU( wps_onplay_menu, ID2P(LANG_ONPLAY_MENU_TITLE),
            &rating_item,
 #endif
            &bookmark_menu,
+#ifdef HAVE_ROCKBOX_PLUGINS
            &plugin_item,
+#endif
            &browse_id3_item, &list_viewers_item,
            &delete_file_item, &view_cue_item,
 #ifdef HAVE_PITCHCONTROL

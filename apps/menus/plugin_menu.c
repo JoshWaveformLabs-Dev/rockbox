@@ -30,6 +30,8 @@
 #include "root_menu.h"
 #include "tree.h"
 
+#ifdef HAVE_ROCKBOX_PLUGINS
+
 enum {
     GAMES,
     APPS,
@@ -109,3 +111,5 @@ MENUITEM_FUNCTION_W_PARAM(demos_item, ITEM_FLAG, ID2P(LANG_PLUGIN_DEMOS),
 MAKE_MENU(plugin_menu, ID2P(LANG_PLUGINS), &menu_callback,
           Icon_Plugin,
           &games_item, &apps_item, &demos_item);
+
+#endif /* HAVE_ROCKBOX_PLUGINS */

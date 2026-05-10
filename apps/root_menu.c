@@ -460,7 +460,9 @@ extern struct menu_item_ex
 #endif
         main_menu_,
         manage_settings,
+#ifdef HAVE_ROCKBOX_PLUGINS
         plugin_menu,
+#endif
         playlist_options,
         info_menu,
         system_menu;
@@ -482,7 +484,9 @@ static const struct root_items items[] = {
 #endif
 
     [GO_TO_RECENTBMARKS] =  { load_bmarks, NULL, &bookmark_settings_menu },
+#ifdef HAVE_ROCKBOX_PLUGINS
     [GO_TO_BROWSEPLUGINS] = { miscscrn, &plugin_menu, NULL },
+#endif
     [GO_TO_PLAYLISTS_SCREEN] = { playlist_view_catalog, NULL,
                                                         &playlist_options },
     [GO_TO_PLAYLIST_VIEWER] = { playlist_view, NULL, &playlist_options },
@@ -505,8 +509,10 @@ MENUITEM_RETURNVALUE(file_browser, ID2P(LANG_DIR_BROWSER), GO_TO_FILEBROWSER,
 MENUITEM_RETURNVALUE(db_browser, ID2P(LANG_TAGCACHE), GO_TO_DBBROWSER,
                         NULL, Icon_Audio);
 #endif
+#ifdef HAVE_ROCKBOX_PLUGINS
 MENUITEM_RETURNVALUE(rocks_browser, ID2P(LANG_PLUGINS), GO_TO_BROWSEPLUGINS,
                         NULL, Icon_Plugin);
+#endif
 
 static char *get_wps_item_name(int selected_item, void * data,
                                char *buffer, size_t buffer_len)
@@ -556,7 +562,9 @@ static struct menu_table menu_table[] = {
     { "radio", &fm },
 #endif
     { "playlists", &playlists },
+#ifdef HAVE_ROCKBOX_PLUGINS
     { "plugins", &rocks_browser },
+#endif
     { "system_menu", &system_menu_ },
     { "shortcuts", &shortcut_menu },
 };

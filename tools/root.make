@@ -134,7 +134,7 @@ else # core
   include $(APPSDIR)/apps.make
   include $(ROOTDIR)/lib/rbcodec/rbcodec.make
 
-  ifeq ($(ENABLEDPLUGINS),yes)
+  ifdef HAVE_ROCKBOX_PLUGINS
     include $(APPSDIR)/plugins/bitmaps/pluginbitmaps.make
     include $(APPSDIR)/plugins/plugins.make
   endif
