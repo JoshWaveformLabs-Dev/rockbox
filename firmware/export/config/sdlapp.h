@@ -65,6 +65,7 @@
 #undef HAVE_TAGCACHE          /* Waveform m4: tagcache/database stripped */
 #undef HAVE_RECORDING         /* Waveform m6: recording stripped */
 #undef HAVE_FMRADIO           /* Waveform m7: FM radio stripped */
+#define WAVEFORM_NO_CROSSFADE /* Waveform m8: crossfade stripped (consumed by config.h:1082) */
 
 #define AB_REPEAT_ENABLE
 

@@ -1079,7 +1079,7 @@ Lyre prototype 1 */
 #endif
 
 /*include support for crossfading - requires significant PCM buffer space*/
-#if MEMORYSIZE > 2
+#if MEMORYSIZE > 2 && !defined(WAVEFORM_NO_CROSSFADE)
 #define HAVE_CROSSFADE
 #endif
 
