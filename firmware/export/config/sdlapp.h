@@ -62,6 +62,7 @@
 #define PLUGIN_BUFFER_SIZE 0x80000
 #undef HAVE_ROCKBOX_PLUGINS   /* Waveform m1: all plugins stripped */
 #undef HAVE_VOICE_THREAD      /* Waveform m2: voice/talk UI stripped */
+#undef HAVE_TAGCACHE          /* Waveform m4: tagcache/database stripped */
 
 #define AB_REPEAT_ENABLE
 
