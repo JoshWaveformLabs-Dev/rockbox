@@ -20,7 +20,9 @@
 
 #define _DEFAULT_SOURCE /* htole64 from endian.h */
 #include <sys/types.h>
+#ifndef WARBLE_NO_SDL
 #include <SDL.h>
+#endif
 #include <dlfcn.h>
 #ifndef __MINGW32__
 #include <endian.h>
@@ -257,6 +259,7 @@ static void write_pcm_raw(int32_t *pcm, int count)
 
 /***** MODE_PLAY *****/
 
+#ifndef WARBLE_NO_SDL
 /* MODE_PLAY uses a double buffer: one half is read by the playback thread and
  * the other half is written to by the main thread. When a thread is done with
  * its current half, it waits for the other thread and then switches. The main
@@ -391,6 +394,13 @@ static void playback_pcm(int16_t *pcm, int count)
         playback_decode_pos += copy_len;
     }
 }
+
+#else /* WARBLE_NO_SDL */
+static void playback_init(void) { }
+static void playback_set_volume(int volume) { (void)volume; }
+static void playback_quit(void) { }
+static void playback_pcm(int16_t *pcm, int count) { (void)pcm; (void)count; }
+#endif /* WARBLE_NO_SDL */
 
 /***** ALL MODES *****/
 

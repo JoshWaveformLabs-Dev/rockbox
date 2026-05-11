@@ -34,6 +34,9 @@
 #include "debug.h"
 #include "panic.h"
 #include "system.h" /* for ALIGN_*() */
+#ifdef WAVEFORM_TELEMETRY_BUFLIB
+#include "wf_telemetry.h"
+#endif
 
 /* FIXME: This comment is pretty out of date now and wrong in some details.
  *
@@ -331,6 +334,9 @@ move_block(struct buflib_context* ctx, union buflib_data* block, int shift)
     if (!ops || ops->move_callback(handle, h_entry->alloc, new_start)
                     != BUFLIB_CB_CANNOT_MOVE)
     {
+#ifdef WAVEFORM_TELEMETRY_BUFLIB
+        wf_buflib_note_move(handle, h_entry->alloc, new_start);
+#endif
         h_entry->alloc = new_start; /* update handle table */
         memmove(new_block, block, block->val * sizeof(union buflib_data));
         retval = true;
@@ -348,6 +354,9 @@ move_block(struct buflib_context* ctx, union buflib_data* block, int shift)
 static bool
 buflib_compact(struct buflib_context *ctx)
 {
+#ifdef WAVEFORM_TELEMETRY_BUFLIB
+    wf_buflib_note_compact_begin();
+#endif
     BDEBUGF("%s(): Compacting!\n", __func__);
     union buflib_data *block,
                       *hole = NULL;
@@ -424,6 +433,15 @@ buflib_compact(struct buflib_context *ctx)
      */
     ctx->alloc_end += shift;
     ctx->compact = true;
+#ifdef WAVEFORM_TELEMETRY_BUFLIB
+    /* Cheap sample — buffer is contiguous now, allocatable() will not
+     * recurse into compact (ctx->compact is true). */
+    {
+        size_t free_b  = buflib_available(ctx);
+        size_t large_b = buflib_allocatable(ctx);
+        wf_buflib_note_compact_done(free_b, large_b);
+    }
+#endif
     return ret || shift;
 }
 
@@ -674,6 +692,12 @@ buffer_alloc:
     /* Only free blocks *before* alloc_end have tagged length. */
     else if ((size_t)block_len > size)
         block->val = size - block_len;
+#ifdef WAVEFORM_TELEMETRY_BUFLIB
+    /* size is in buflib_data units here; convert to bytes for the counter.
+     * last_total_free is maintained arithmetically inside the hook — we
+     * deliberately do NOT call buflib_available(ctx) on the hot path. */
+    wf_buflib_note_alloc(size * sizeof(union buflib_data));
+#endif
     /* Return the handle index as a positive integer. */
     return ctx->handle_table - handle;
 }
@@ -729,6 +753,10 @@ buflib_free(struct buflib_context *ctx, int handle_num)
     union buflib_data *handle = ctx->handle_table - handle_num,
                       *freed_block = handle_to_block(ctx, handle_num),
                       *block, *next_block;
+#ifdef WAVEFORM_TELEMETRY_BUFLIB
+    /* Capture original size in bytes before merge mutates freed_block->val. */
+    size_t wf_freed_bytes = (size_t)freed_block->val * sizeof(union buflib_data);
+#endif
     /* We need to find the block before the current one, to see if it is free
      * and can be merged with this one.
      */
@@ -760,6 +788,10 @@ buflib_free(struct buflib_context *ctx, int handle_num)
     }
     handle_free(ctx, handle);
     handle->alloc = NULL;
+#ifdef WAVEFORM_TELEMETRY_BUFLIB
+    /* Arithmetic delta only — no heap walk. */
+    wf_buflib_note_free(wf_freed_bytes);
+#endif
 
     return 0; /* unconditionally */
 }
@@ -956,6 +988,9 @@ void buflib_pin(struct buflib_context *ctx, int handle)
 
     union buflib_data *data = handle_to_block(ctx, handle);
     data[BUFLIB_IDX_PIN].pincount++;
+#ifdef WAVEFORM_TELEMETRY_BUFLIB
+    wf_buflib_note_pin(handle, data[BUFLIB_IDX_PIN].pincount);
+#endif
 }
 
 void buflib_unpin(struct buflib_context *ctx, int handle)
@@ -971,6 +1006,9 @@ void buflib_unpin(struct buflib_context *ctx, int handle)
     }
 
     data[BUFLIB_IDX_PIN].pincount--;
+#ifdef WAVEFORM_TELEMETRY_BUFLIB
+    wf_buflib_note_unpin(handle, data[BUFLIB_IDX_PIN].pincount);
+#endif
 }
 
 unsigned buflib_pin_count(struct buflib_context *ctx, int handle)

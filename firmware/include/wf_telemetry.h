@@ -102,5 +102,62 @@ const struct wf_event *wf_event_snapshot(size_t *count_out, size_t *head_out);
 /* Reset ring (clears all records and counter). Used for fresh per-scene capture. */
 void wf_event_reset(void);
 
+/* ----- D2: buflib subsystem ------------------------------------------- */
+#ifdef WAVEFORM_TELEMETRY_BUFLIB
+
+/* Counter snapshot exposed to debug menu / dump scripts.
+ *
+ * Pin tracking scope: cur/peak_pinned_handles count distinct handles that
+ * have an outstanding explicit buflib_pin() (i.e. 0→1 / 1→0 transitions).
+ * The inline buflib_get_data_pinned() / buflib_put_data_pinned() pair in
+ * include/buflib_mempool.h bypasses telemetry by design — those are
+ * per-access scoped and would dwarf the signal. pin_count/unpin_count are
+ * total explicit-call counts (every pin/unpin, including refcount bumps). */
+struct wf_buflib_counters {
+    uint32_t alloc_count;
+    uint32_t free_count;
+    uint32_t move_count;
+    uint32_t compact_count;
+    uint32_t pin_count;
+    uint32_t unpin_count;
+    uint32_t cur_pinned_handles;   /* distinct handles currently pinned */
+    uint32_t peak_pinned_handles;  /* peak of cur_pinned_handles */
+    uint32_t min_largest_contig;   /* lifetime floor of buflib_allocatable() */
+    uint32_t last_total_free;
+    uint32_t last_largest_contig;
+};
+
+void wf_buflib_counters_get(struct wf_buflib_counters *out);
+
+/* largest-contiguous / total-free, scaled 0..10000. 10000 = perfectly defragged.
+ * Returns 0 when total_free is 0. This is the "gold metric" per
+ * docs/research/INSTRUMENTATION_STRATEGY.md. */
+uint32_t wf_buflib_frag_ratio_x10000(void);
+
+/* Hot-path hooks. Called from firmware/buflib_mempool.c — keep cheap.
+ *
+ * last_total_free is maintained arithmetically (delta-only): note_alloc
+ * subtracts size from the cached value, note_free adds freed bytes. This
+ * avoids walking the heap on every alloc/free. Full re-sync of total_free
+ * and largest_contig happens only in note_compact_done (buffer is naturally
+ * contiguous so the walks are effectively free) and in wf_buflib_sample_now
+ * (debug menu, user-initiated). */
+void wf_buflib_note_alloc(size_t size);
+void wf_buflib_note_free(size_t freed);
+void wf_buflib_note_move(int handle, const void *from, const void *to);
+void wf_buflib_note_compact_begin(void);
+void wf_buflib_note_compact_done(size_t total_free, size_t largest_contig);
+/* Pin hooks: pass the NEW pincount value (after increment / before pre-decrement
+ * reflects the to-be-stored value). cur_pinned_handles only changes on
+ * 0→1 (note_pin with new_pincount==1) and 1→0 (note_unpin with new_pincount==0). */
+void wf_buflib_note_pin(int handle, unsigned new_pincount);
+void wf_buflib_note_unpin(int handle, unsigned new_pincount);
+
+/* Explicit sample — for debug menu. Walks the heap, refreshes last_* fields
+ * and updates the min-largest-contig floor. Safe to call from idle context. */
+void wf_buflib_sample_now(void);
+
+#endif /* WAVEFORM_TELEMETRY_BUFLIB */
+
 #endif /* WAVEFORM_TELEMETRY */
 #endif /* _WF_TELEMETRY_H_ */

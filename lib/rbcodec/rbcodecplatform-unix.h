@@ -20,9 +20,9 @@
 /* abs, atoi, strtol, strtoul, labs, rand */
 #include <stdlib.h>
 
-#ifdef __MINGW32__
-/* Windows/MinGW lacks byteswap.h and endian.h; use compiler builtins + LE assumption.
- * x86_64 is little-endian; this matches all supported Windows targets. */
+#if defined(__MINGW32__) || defined(__arm__)
+/* MinGW and arm-none-eabi lack byteswap.h / endian.h; use compiler builtins + LE assumption.
+ * iPod Classic (arm926ej-s) and x86/x86_64 Windows targets are all little-endian. */
 #define swap16(x) __builtin_bswap16(x)
 #define swap32(x) __builtin_bswap32(x)
 #define swap64(x) __builtin_bswap64(x)
