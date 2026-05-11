@@ -159,5 +159,43 @@ void wf_buflib_sample_now(void);
 
 #endif /* WAVEFORM_TELEMETRY_BUFLIB */
 
+/* ----- D3: stack canary scanner --------------------------------------- */
+#ifdef WAVEFORM_TELEMETRY_STACK
+
+#define WF_STACK_NAME_MAX 32
+
+/* Per-thread record. Populated by wf_stack_scan_now() / wf_stack_get_records(). */
+struct wf_stack_record {
+    char     name[WF_STACK_NAME_MAX];
+    uint32_t thread_id;
+    uint32_t stack_size;       /* bytes */
+    uint32_t peak_used;        /* lifetime peak via DEADBEEF scan, bytes */
+    uint32_t last_used;        /* most recent scan reading, bytes */
+    uint8_t  in_use;           /* slot has a live thread */
+    uint8_t  overrun;          /* canary at stack[0] no longer DEADBEEF */
+    uint8_t  pad[2];
+};
+
+/* Scan all thread slots. Walks each thread's DEADBEEF region, updates the
+ * per-slot peak_used / last_used / overrun. Records WF_EVT_STACK_LOW on a
+ * fresh peak and WF_EVT_STACK_OVERRUN on canary breach.
+ *
+ * Stage 1 limitation: on-demand only (called from debug menu or codec
+ * lifecycle hooks). Not driven from the tick callback because the scan
+ * needs corelocks that cannot be taken from IRQ context. A periodic
+ * worker thread is a Stage 2 follow-up. */
+void wf_stack_scan_now(void);
+
+/* Copy records into caller-provided array. out_records must hold at least
+ * max_records entries. count_out (if non-NULL) returns the populated count
+ * (capped at min(max_records, MAXTHREADS)). */
+void wf_stack_get_records(struct wf_stack_record *out_records,
+                          size_t max_records, size_t *count_out);
+
+uint32_t wf_stack_get_overrun_total(void);
+uint32_t wf_stack_get_scan_count(void);
+
+#endif /* WAVEFORM_TELEMETRY_STACK */
+
 #endif /* WAVEFORM_TELEMETRY */
 #endif /* _WF_TELEMETRY_H_ */

@@ -20,6 +20,10 @@
  ****************************************************************************/
 #include "kernel-internal.h"
 #include "system.h"
+#ifdef WAVEFORM_TELEMETRY_STACK
+#include <string.h>
+#include "wf_telemetry.h"
+#endif
 
 /* Unless otherwise defined, do nothing */
 #ifndef YIELD_KERNEL_HOOK
@@ -334,3 +338,123 @@ int thread_get_debug_info(unsigned int thread_id,
 
     return ret;
 }
+
+#ifdef WAVEFORM_TELEMETRY_STACK
+/* ------------------------------------------------------------------------
+ * Waveform OS Stage 1: per-thread stack canary scanner.
+ *
+ * Walks each in-use thread slot, looks for the deepest non-DEADBEEF word
+ * (the high-water mark of stack usage) and reports canary breach when
+ * stack[0] is no longer DEADBEEF. Updates a local mirror table that the
+ * debug menu reads via wf_stack_get_records().
+ *
+ * Skips slots whose DEADBEEF fill never ran — SDL_THREADS/CTRU paths do
+ * not allocate a per-thread stack array, so stack_size==0 marks them out.
+ * On HAVE_WIN32_FIBER_THREADS (our SDL sim) and on ARM targets the fill
+ * runs inside create_thread(). */
+
+static struct wf_stack_record wf_stack_records[MAXTHREADS];
+static uint32_t wf_stack_scan_total;
+static uint32_t wf_stack_overrun_total;
+
+static void wf_stack_scan_slot_locked(unsigned int slotnum,
+                                      struct thread_entry *thread)
+{
+#if !defined(HAVE_SDL_THREADS) && !defined(CTRU)
+    struct wf_stack_record *rec = &wf_stack_records[slotnum];
+
+    rec->in_use    = 1;
+    rec->thread_id = thread->id;
+    rec->stack_size = (uint32_t)thread->stack_size;
+
+    format_thread_name(rec->name, sizeof(rec->name), thread);
+
+    uintptr_t *stack = thread->stack;
+    size_t stack_words = thread->stack_size / sizeof(uintptr_t);
+
+    /* Walk from stack[0] upward — first non-DEADBEEF marks deepest reach. */
+    size_t deepest = stack_words; /* nothing touched yet */
+    for (size_t i = 0; i < stack_words; i++)
+    {
+        if (stack[i] != DEADBEEF)
+        {
+            deepest = i;
+            break;
+        }
+    }
+
+    uint32_t used_words = (uint32_t)(stack_words - deepest);
+    uint32_t used_bytes = used_words * (uint32_t)sizeof(uintptr_t);
+    rec->last_used = used_bytes;
+
+    if (used_bytes > rec->peak_used)
+    {
+        rec->peak_used = used_bytes;
+        wf_event_record(WF_SUB_STACK, WF_EVT_STACK_LOW,
+                        thread->id, used_bytes,
+                        (uint32_t)thread->stack_size, 0);
+    }
+
+    /* Canary breach: deepest==0 means the very last guard word was clobbered. */
+    if (deepest == 0 && stack_words > 0)
+    {
+        if (!rec->overrun)
+        {
+            rec->overrun = 1;
+            wf_stack_overrun_total++;
+            wf_event_record(WF_SUB_STACK, WF_EVT_STACK_OVERRUN,
+                            thread->id, used_bytes,
+                            (uint32_t)thread->stack_size, 0);
+        }
+    }
+#else
+    (void)slotnum; (void)thread;
+#endif /* !HAVE_SDL_THREADS && !CTRU */
+}
+
+void wf_stack_scan_now(void)
+{
+    int oldlevel = disable_irq_save();
+    corelock_lock(&threadalloc.cl);
+
+    for (unsigned int slotnum = 0; slotnum < MAXTHREADS; slotnum++)
+    {
+        if (threadbit_test_bit(&threadalloc.avail, slotnum) != 0)
+        {
+            /* Slot is free — clear in-use flag but keep historical data. */
+            wf_stack_records[slotnum].in_use = 0;
+            continue;
+        }
+
+        struct thread_entry *thread = __thread_slot_entry(slotnum);
+        corelock_lock(&thread->slot_cl);
+        wf_stack_scan_slot_locked(slotnum, thread);
+        corelock_unlock(&thread->slot_cl);
+    }
+
+    wf_stack_scan_total++;
+    corelock_unlock(&threadalloc.cl);
+    restore_irq(oldlevel);
+}
+
+void wf_stack_get_records(struct wf_stack_record *out_records,
+                          size_t max_records, size_t *count_out)
+{
+    size_t n = max_records < MAXTHREADS ? max_records : MAXTHREADS;
+    int oldlevel = disable_irq_save();
+    memcpy(out_records, wf_stack_records, n * sizeof(*out_records));
+    restore_irq(oldlevel);
+    if (count_out)
+        *count_out = n;
+}
+
+uint32_t wf_stack_get_overrun_total(void)
+{
+    return wf_stack_overrun_total;
+}
+
+uint32_t wf_stack_get_scan_count(void)
+{
+    return wf_stack_scan_total;
+}
+#endif /* WAVEFORM_TELEMETRY_STACK */
