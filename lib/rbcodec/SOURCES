@@ -33,6 +33,7 @@ dsp/dsp_arm_v6.S
 # endif
 metadata/replaygain.c
 metadata/metadata_common.c
+#ifndef WAVEFORM_STRIP_CODECS
 metadata/a52.c
 metadata/adx.c
 metadata/aiff.c
@@ -67,3 +68,14 @@ metadata/vox.c
 metadata/wave.c
 metadata/wavpack.c
 metadata/aac.c
+#else /* WAVEFORM_STRIP_CODECS: keep parsers for MP3/AAC/FLAC/ALAC/Opus only */
+metadata/flac.c
+metadata/mp4.c
+metadata/ogg.c
+metadata/aac.c
+#ifdef HAVE_RECORDING
+metadata/aiff.c
+metadata/wave.c
+metadata/wavpack.c
+#endif
+#endif /* WAVEFORM_STRIP_CODECS */

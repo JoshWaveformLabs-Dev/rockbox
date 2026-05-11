@@ -66,6 +66,7 @@
 #undef HAVE_RECORDING         /* Waveform m6: recording stripped */
 #undef HAVE_FMRADIO           /* Waveform m7: FM radio stripped */
 #define WAVEFORM_NO_CROSSFADE /* Waveform m8: crossfade stripped (consumed by config.h:1082) */
+#define WAVEFORM_STRIP_CODECS /* Waveform m9: codec set trimmed to MP3/AAC/FLAC/ALAC/Opus */
 
 #define AB_REPEAT_ENABLE
 

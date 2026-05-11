@@ -34,6 +34,7 @@
 
 #include "metadata/metadata_common.h"
 
+#ifndef WAVEFORM_STRIP_CODECS
 static bool get_shn_metadata(int fd, struct mp3entry *id3)
 {
     /* TODO: read the id3v2 header if it exists */
@@ -51,6 +52,7 @@ static bool get_other_asap_metadata(int fd, struct mp3entry *id3)
     id3->genre_string = id3_get_num_genre(36);
     return true;
 }
+#endif /* !WAVEFORM_STRIP_CODECS */
 bool write_metadata_log = false;
 
 const struct afmt_entry audio_formats[AFMT_NUM_CODECS] =
@@ -71,33 +73,42 @@ const struct afmt_entry audio_formats[AFMT_NUM_CODECS] =
     /* MPEG Audio layer 1 */
     [AFMT_MPA_L1] =
         AFMT_ENTRY("MP1",   "mpa",  "N/A",       get_mp3_metadata,   "mp1\0"),
+#if !defined(WAVEFORM_STRIP_CODECS) || defined(HAVE_RECORDING)
     /* Audio Interchange File Format */
     [AFMT_AIFF] =
         AFMT_ENTRY("AIFF",  "aiff", "aiff_enc", get_aiff_metadata,  "aiff\0aif\0"),
     /* Uncompressed PCM in a WAV file OR ATRAC3 stream in WAV file (.at3) */
     [AFMT_PCM_WAV] =
         AFMT_ENTRY("WAV",   "wav",  "wav_enc",  get_wave_metadata,  "wav\0at3\0"),
+#endif
+#ifndef WAVEFORM_STRIP_CODECS
     /* Ogg Vorbis */
     [AFMT_OGG_VORBIS] =
         AFMT_ENTRY("Ogg", "vorbis", "N/A",       get_ogg_metadata,   "ogg\0oga\0"),
+#endif
     /* FLAC */
     [AFMT_FLAC] =
         AFMT_ENTRY("FLAC",  "flac", "N/A",       get_flac_metadata,  "flac\0"),
+#ifndef WAVEFORM_STRIP_CODECS
     /* Musepack SV7 */
     [AFMT_MPC_SV7] =
         AFMT_ENTRY("MPCv7", "mpc",  "N/A",       get_musepack_metadata,"mpc\0"),
     /* A/52 (aka AC3) audio */
     [AFMT_A52] =
         AFMT_ENTRY("AC3",   "a52",  "N/A",       get_a52_metadata,   "a52\0ac3\0"),
+#endif
+#if !defined(WAVEFORM_STRIP_CODECS) || defined(HAVE_RECORDING)
     /* WavPack */
     [AFMT_WAVPACK] =
         AFMT_ENTRY("WV","wavpack","wavpack_enc",get_wavpack_metadata,"wv\0"),
+#endif
     /* Apple Lossless Audio Codec */
     [AFMT_MP4_ALAC] =
         AFMT_ENTRY("ALAC",  "alac", "N/A",       get_mp4_metadata,   "m4a\0m4b\0"),
     /* Advanced Audio Coding in M4A container */
     [AFMT_MP4_AAC] =
         AFMT_ENTRY("AAC",   "aac",  "N/A",       get_mp4_metadata,   "mp4\0"),
+#ifndef WAVEFORM_STRIP_CODECS
     /* Shorten */
     [AFMT_SHN] =
         AFMT_ENTRY("SHN","shorten", "N/A",       get_shn_metadata,   "shn\0"),
@@ -203,9 +214,11 @@ const struct afmt_entry audio_formats[AFMT_NUM_CODECS] =
     /* Musepack SV8 */
     [AFMT_MPC_SV8] =
         AFMT_ENTRY("MPCv8", "mpc",  "N/A",       get_musepack_metadata,"mpc\0"),
+#endif /* !WAVEFORM_STRIP_CODECS */
     /* Advanced Audio Coding High Efficiency in M4A container */
     [AFMT_MP4_AAC_HE] =
         AFMT_ENTRY("AAC-HE","aac",  "N/A",       get_mp4_metadata,   "mp4\0"),
+#ifndef WAVEFORM_STRIP_CODECS
     /* AY (ZX Spectrum, Amstrad CPC Sound Format) */
     [AFMT_AY] =
         AFMT_ENTRY("AY",    "ay",  "N/A", get_ay_metadata,           "ay\0"),
@@ -229,6 +242,7 @@ const struct afmt_entry audio_formats[AFMT_NUM_CODECS] =
     /* KSS (MSX computer KSS Music File) */
     [AFMT_KSS] =
         AFMT_ENTRY("KSS", "kss", "N/A", get_kss_metadata,   "kss\0"),
+#endif /* !WAVEFORM_STRIP_CODECS */
     /* Opus */
     [AFMT_OPUS] =
         AFMT_ENTRY("Opus", "opus", "N/A", get_ogg_metadata,   "opus\0"),

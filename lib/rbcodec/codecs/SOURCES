@@ -1,5 +1,6 @@
 /* decoders */
 
+#ifndef WAVEFORM_STRIP_CODECS
 opus.c
 vorbis.c
 mpa.c
@@ -46,6 +47,16 @@ sid.c
 kss.c
 #endif
 aac_bsf.c
+#else /* WAVEFORM_STRIP_CODECS: keep MP3 / AAC / FLAC / ALAC / Opus only */
+opus.c
+mpa.c
+flac.c
+#ifndef RB_PROFILE
+alac.c
+#endif
+aac.c
+aac_bsf.c
+#endif /* WAVEFORM_STRIP_CODECS */
 
 #ifdef HAVE_RECORDING
 
