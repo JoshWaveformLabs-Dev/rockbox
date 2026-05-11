@@ -68,6 +68,18 @@
 #define WAVEFORM_NO_CROSSFADE /* Waveform m8: crossfade stripped (consumed by config.h:1082) */
 #define WAVEFORM_STRIP_CODECS /* Waveform m9: codec set trimmed to MP3/AAC/FLAC/ALAC/Opus */
 
+/* Waveform OS post-m9 Stage 1 instrumentation. Engineering builds only.
+ * Production builds: comment out the WAVEFORM_TELEMETRY line — every hook
+ * is #ifdef-gated and falls through to zero-cost. */
+#define WAVEFORM_TELEMETRY
+#ifdef WAVEFORM_TELEMETRY
+#define WAVEFORM_TELEMETRY_BUFLIB
+#define WAVEFORM_TELEMETRY_PCMBUF
+#define WAVEFORM_TELEMETRY_CODEC
+#define WAVEFORM_TELEMETRY_STORAGE
+#define WAVEFORM_TELEMETRY_STACK
+#endif
+
 #define AB_REPEAT_ENABLE
 
 

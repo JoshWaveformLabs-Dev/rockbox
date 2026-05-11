@@ -11,6 +11,9 @@ buflib_malloc.c
 #endif
 core_alloc.c
 general.c
+#ifdef WAVEFORM_TELEMETRY
+wf_telemetry.c
+#endif
 powermgmt.c
 #if (CONFIG_PLATFORM & PLATFORM_HOSTED)
 
