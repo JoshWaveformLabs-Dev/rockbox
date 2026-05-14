@@ -37,6 +37,9 @@
 /* Define LOGF_ENABLE to enable logf output in this file */
 /*#define LOGF_ENABLE*/
 #include "logf.h"
+#ifdef WAVEFORM_TELEMETRY_CODEC
+#include "wf_telemetry.h"
+#endif
 
 /* macros to enable logf for queues
    logging on SYS_TIMEOUT can be disabled */
@@ -457,12 +460,19 @@ static void load_codec(const struct codec_load_info *ev_data)
     struct codec_load_info data = *ev_data;
     bool const encoder = type_is_encoder(data.afmt);
 
+#ifdef WAVEFORM_TELEMETRY_CODEC
+    wf_codec_note_load_begin((uint16_t)data.afmt);
+#endif
+
     if (codec_type != AFMT_UNKNOWN)
     {
         /* Must have unloaded it first */
         logf("a codec is already loaded");
         if (data.hid >= 0)
             bufclose(data.hid);
+#ifdef WAVEFORM_TELEMETRY_CODEC
+        wf_codec_note_load_end((uint16_t)data.afmt, -1);
+#endif
         return;
     }
 
@@ -494,11 +504,17 @@ static void load_codec(const struct codec_load_info *ev_data)
     /* Types must agree */
     if (status >= 0 && encoder == !!codec_get_enc_callback())
     {
+#ifdef WAVEFORM_TELEMETRY_CODEC
+        wf_codec_note_load_end((uint16_t)data.afmt, status);
+#endif
         codec_type = data.afmt;
         codec_queue_ack(Q_CODEC_LOAD);
         return;
     }
 
+#ifdef WAVEFORM_TELEMETRY_CODEC
+    wf_codec_note_load_end((uint16_t)data.afmt, status);
+#endif
     /* Failed - get rid of it */
     unload_codec();
 }
@@ -509,9 +525,16 @@ static void run_codec(void)
     bool const encoder = type_is_encoder(codec_type);
     int status;
 
+#ifdef WAVEFORM_TELEMETRY_CODEC
+    wf_codec_note_run_begin((uint16_t)codec_type);
+#endif
+
     if (codec_type == AFMT_UNKNOWN)
     {
         logf("no codec to run");
+#ifdef WAVEFORM_TELEMETRY_CODEC
+        wf_codec_note_run_end((uint16_t)AFMT_UNKNOWN, -1);
+#endif
         return;
     }
 
@@ -535,6 +558,10 @@ static void run_codec(void)
     }
 
     status = codec_run_proc();
+
+#ifdef WAVEFORM_TELEMETRY_CODEC
+    wf_codec_note_run_end((uint16_t)codec_type, status);
+#endif
 
     if (!encoder)
     {

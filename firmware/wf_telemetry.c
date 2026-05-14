@@ -219,4 +219,185 @@ uint32_t wf_buflib_frag_ratio_x10000(void)
 
 #endif /* WAVEFORM_TELEMETRY_BUFLIB */
 
+/* ----- D4: pcmbuf counters ------------------------------------------- */
+#ifdef WAVEFORM_TELEMETRY_PCMBUF
+
+/* min_fill_ever needs UINT32_MAX as the "no sample yet" sentinel; the rest
+ * of the struct zero-inits cleanly in BSS. */
+static struct wf_pcmbuf_counters wf_pcmbuf_state = {
+    .min_fill_ever = UINT32_MAX,
+};
+
+/* Tick of the most recent low_state entry — used to accumulate the
+ * low-state interval on exit (and on note_stopped). */
+static uint32_t wf_pcmbuf_low_enter_tick;
+
+void wf_pcmbuf_note_request(uint32_t realrem, uint32_t watermark)
+{
+    uint32_t now = (uint32_t)current_tick;
+    int now_low = (realrem < watermark) ? 1 : 0;
+    int was_low;
+    uint32_t held = 0;
+    /* Emit inside the critical section: LOW_ENTER/LOW_EXIT pairs must stay
+     * strictly ordered in the ring relative to the counter state they
+     * describe. wf_event_record's own disable_irq_save() nests harmlessly
+     * (Rockbox saves/restores prior state, not raw enable). */
+    int irq = disable_irq_save();
+    if (realrem < wf_pcmbuf_state.min_fill_ever)
+        wf_pcmbuf_state.min_fill_ever = realrem;
+    was_low = (int)wf_pcmbuf_state.in_low_state;
+    if (now_low && !was_low)
+    {
+        wf_pcmbuf_state.in_low_state = 1;
+        wf_pcmbuf_state.low_entry_count++;
+        wf_pcmbuf_low_enter_tick = now;
+        wf_event_record(WF_SUB_PCMBUF, WF_EVT_PCMBUF_LOW_ENTER,
+                        realrem, watermark, now, 0);
+    }
+    else if (!now_low && was_low)
+    {
+        held = now - wf_pcmbuf_low_enter_tick;
+        wf_pcmbuf_state.low_total_ticks += held;
+        wf_pcmbuf_state.low_exit_count++;
+        wf_pcmbuf_state.in_low_state = 0;
+        wf_event_record(WF_SUB_PCMBUF, WF_EVT_PCMBUF_LOW_EXIT,
+                        realrem, watermark, held, 0);
+    }
+    restore_irq(irq);
+}
+
+void wf_pcmbuf_note_stopped(void)
+{
+    uint32_t now = (uint32_t)current_tick;
+    int irq = disable_irq_save();
+    if (wf_pcmbuf_state.in_low_state)
+    {
+        uint32_t held = now - wf_pcmbuf_low_enter_tick;
+        wf_pcmbuf_state.low_total_ticks += held;
+        wf_pcmbuf_state.low_exit_count++;
+        wf_pcmbuf_state.in_low_state = 0;
+        wf_event_record(WF_SUB_PCMBUF, WF_EVT_PCMBUF_LOW_EXIT,
+                        0, 0, held, 1 /*stopped*/);
+    }
+    restore_irq(irq);
+}
+
+void wf_pcmbuf_counters_get(struct wf_pcmbuf_counters *out)
+{
+    int irq = disable_irq_save();
+    *out = wf_pcmbuf_state;
+    restore_irq(irq);
+}
+
+#endif /* WAVEFORM_TELEMETRY_PCMBUF */
+
+/* ----- D4: codec counters -------------------------------------------- */
+#ifdef WAVEFORM_TELEMETRY_CODEC
+
+static struct wf_codec_record wf_codec_records[WF_CODEC_MAX_FORMATS];
+/* Single codec is active at a time (codec_thread.c serialises via
+ * codec_type), so one pending pair is enough. AFMT_UNKNOWN==0 doubles as
+ * the "no pending" sentinel for the pending_*_afmt fields. */
+static uint32_t wf_codec_pending_load_tick;
+static uint32_t wf_codec_pending_run_tick;
+static uint16_t wf_codec_pending_load_afmt;
+static uint16_t wf_codec_pending_run_afmt;
+
+/* Linear scan + first-free allocation. Returns NULL if all slots taken
+ * (silent drop — production-stripped set is 5 codecs vs 8 slots). */
+static struct wf_codec_record *wf_codec_slot_locked(uint16_t afmt)
+{
+    struct wf_codec_record *free_slot = NULL;
+    for (size_t i = 0; i < WF_CODEC_MAX_FORMATS; i++)
+    {
+        if (wf_codec_records[i].in_use && wf_codec_records[i].afmt == afmt)
+            return &wf_codec_records[i];
+        if (!wf_codec_records[i].in_use && free_slot == NULL)
+            free_slot = &wf_codec_records[i];
+    }
+    if (free_slot)
+    {
+        free_slot->afmt   = afmt;
+        free_slot->in_use = 1;
+    }
+    return free_slot;
+}
+
+void wf_codec_note_load_begin(uint16_t afmt)
+{
+    int irq = disable_irq_save();
+    wf_codec_pending_load_tick = (uint32_t)current_tick;
+    wf_codec_pending_load_afmt = afmt;
+    restore_irq(irq);
+    wf_event_record(WF_SUB_CODEC, WF_EVT_CODEC_LOAD_BEGIN, afmt, 0, 0, 0);
+}
+
+void wf_codec_note_load_end(uint16_t afmt, int32_t status)
+{
+    uint32_t now = (uint32_t)current_tick;
+    uint32_t elapsed = 0;
+    int irq = disable_irq_save();
+    if (wf_codec_pending_load_afmt == afmt)
+        elapsed = now - wf_codec_pending_load_tick;
+    struct wf_codec_record *r = wf_codec_slot_locked(afmt);
+    if (r)
+    {
+        r->load_count++;
+        r->load_ticks_last = elapsed;
+        if (elapsed > r->load_ticks_max)
+            r->load_ticks_max = elapsed;
+    }
+    wf_codec_pending_load_afmt = 0;
+    restore_irq(irq);
+    wf_event_record(WF_SUB_CODEC, WF_EVT_CODEC_LOAD_END,
+                    afmt, elapsed, (uint32_t)status, 0);
+}
+
+void wf_codec_note_run_begin(uint16_t afmt)
+{
+    int irq = disable_irq_save();
+    wf_codec_pending_run_tick = (uint32_t)current_tick;
+    wf_codec_pending_run_afmt = afmt;
+    restore_irq(irq);
+    wf_event_record(WF_SUB_CODEC, WF_EVT_CODEC_RUN_BEGIN, afmt, 0, 0, 0);
+}
+
+void wf_codec_note_run_end(uint16_t afmt, int32_t status)
+{
+    uint32_t now = (uint32_t)current_tick;
+    uint32_t elapsed = 0;
+    int irq = disable_irq_save();
+    if (wf_codec_pending_run_afmt == afmt)
+        elapsed = now - wf_codec_pending_run_tick;
+    struct wf_codec_record *r = wf_codec_slot_locked(afmt);
+    if (r)
+    {
+        r->run_count++;
+        r->run_ticks_last = elapsed;
+        if (elapsed > r->run_ticks_max)
+            r->run_ticks_max = elapsed;
+    }
+    wf_codec_pending_run_afmt = 0;
+    restore_irq(irq);
+    wf_event_record(WF_SUB_CODEC, WF_EVT_CODEC_RUN_END,
+                    afmt, elapsed, (uint32_t)status, 0);
+}
+
+void wf_codec_get_records(struct wf_codec_record *out, size_t max_records,
+                          size_t *count_out)
+{
+    size_t copied = 0;
+    int irq = disable_irq_save();
+    for (size_t i = 0; i < WF_CODEC_MAX_FORMATS && copied < max_records; i++)
+    {
+        if (wf_codec_records[i].in_use)
+            out[copied++] = wf_codec_records[i];
+    }
+    restore_irq(irq);
+    if (count_out)
+        *count_out = copied;
+}
+
+#endif /* WAVEFORM_TELEMETRY_CODEC */
+
 #endif /* WAVEFORM_TELEMETRY */

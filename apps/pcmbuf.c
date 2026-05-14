@@ -40,6 +40,9 @@
 #include "settings.h"
 #include "audio.h"
 #include "voice_thread.h"
+#ifdef WAVEFORM_TELEMETRY_PCMBUF
+#include "wf_telemetry.h"
+#endif
 
 /* 2 channels * 2 bytes/sample, interleaved */
 #define PCMBUF_SAMPLE_SIZE   (2 * 2)
@@ -491,10 +494,18 @@ void * pcmbuf_request_buffer(int *count)
         if (realrem < pcmbuf_watermark)
             trigger_cpu_boost();
 
+#ifdef WAVEFORM_TELEMETRY_PCMBUF
+        wf_pcmbuf_note_request((uint32_t)realrem, (uint32_t)pcmbuf_watermark);
+#endif
+
         boost_codec_thread(realrem*10 / pcmbuf_size);
     }
     else    /* !playing */
     {
+#ifdef WAVEFORM_TELEMETRY_PCMBUF
+        wf_pcmbuf_note_stopped();
+#endif
+
         /* Boost CPU for pre-buffer */
         trigger_cpu_boost();
 

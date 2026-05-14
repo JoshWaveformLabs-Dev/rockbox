@@ -197,5 +197,72 @@ uint32_t wf_stack_get_scan_count(void);
 
 #endif /* WAVEFORM_TELEMETRY_STACK */
 
+/* ----- D4: pcmbuf subsystem ------------------------------------------- */
+#ifdef WAVEFORM_TELEMETRY_PCMBUF
+
+/* Edge-triggered watermark-cross telemetry. low_entry_count counts 0->1
+ * transitions of (realrem < watermark); low_exit_count counts 1->0. The
+ * state machine is internal — callers just feed every realrem/watermark
+ * observation in via wf_pcmbuf_note_request() and we decide whether the
+ * sample crosses an edge. min_fill_ever is the smallest realrem ever
+ * observed (initialised to UINT32_MAX on first call). low_total_ticks
+ * accumulates ticks held in the below-watermark state across runs. */
+struct wf_pcmbuf_counters {
+    uint32_t low_entry_count;
+    uint32_t low_exit_count;
+    uint32_t min_fill_ever;       /* bytes; UINT32_MAX = no sample yet */
+    uint32_t low_total_ticks;
+    uint32_t in_low_state;        /* 0 / 1 — current edge state */
+};
+
+/* Hot-path hook. Call from pcmbuf_request_buffer() — realrem = bytes used
+ * in pcm buffer (pcmbuf_size - freespace), watermark = pcmbuf_watermark. */
+void wf_pcmbuf_note_request(uint32_t realrem, uint32_t watermark);
+
+/* Called from the channel-stopped branch — closes out any open low-state
+ * interval so we don't accumulate ticks while playback is halted. */
+void wf_pcmbuf_note_stopped(void);
+
+void wf_pcmbuf_counters_get(struct wf_pcmbuf_counters *out);
+
+#endif /* WAVEFORM_TELEMETRY_PCMBUF */
+
+/* ----- D4: codec subsystem -------------------------------------------- */
+#ifdef WAVEFORM_TELEMETRY_CODEC
+
+/* 8 slots vs the post-strip 5-codec set (MP3/AAC/FLAC/ALAC/Opus + headroom
+ * for AAC_BSF and any future addition). Slot exhaustion is silent — the
+ * stripped target will never reach it. */
+#define WF_CODEC_MAX_FORMATS 8
+
+struct wf_codec_record {
+    uint16_t afmt;                /* AFMT_* from lib/rbcodec/metadata/metadata.h */
+    uint16_t in_use;              /* 0 = empty slot, 1 = populated */
+    uint32_t load_count;
+    uint32_t load_ticks_last;
+    uint32_t load_ticks_max;
+    uint32_t run_count;
+    uint32_t run_ticks_last;      /* codec-lifetime ticks, not per-frame */
+    uint32_t run_ticks_max;
+};
+
+/* Lifecycle hooks. A single codec is active at any time (codec_thread.c
+ * guards with codec_type != AFMT_UNKNOWN), so internal pending-tick state
+ * is a single pair rather than per-afmt. note_load_end / note_run_end
+ * compute elapsed against the stored pending tick and update the slot's
+ * last + max + count. Each hook also records a WF_EVT_CODEC_* event into
+ * the binary ring for offline analysis. */
+void wf_codec_note_load_begin(uint16_t afmt);
+void wf_codec_note_load_end(uint16_t afmt, int32_t status);
+void wf_codec_note_run_begin(uint16_t afmt);
+void wf_codec_note_run_end(uint16_t afmt, int32_t status);
+
+/* Copy the populated slots into caller-provided array. *count_out (if
+ * non-NULL) returns how many slots are in_use, capped at max_records. */
+void wf_codec_get_records(struct wf_codec_record *out, size_t max_records,
+                          size_t *count_out);
+
+#endif /* WAVEFORM_TELEMETRY_CODEC */
+
 #endif /* WAVEFORM_TELEMETRY */
 #endif /* _WF_TELEMETRY_H_ */
