@@ -143,6 +143,10 @@
 #include "iap.h"
 #endif
 
+#ifdef WAVEFORM_TELEMETRY
+#include "wf_telemetry.h"
+#endif
+
 #define SCREEN_MAX_CHARS (LCD_WIDTH / SYSFONT_WIDTH)
 
 static const char* threads_getname(int selected_item, void *data,
@@ -2800,6 +2804,191 @@ static bool dbg_bootflash_dump(void) {
 }
 #endif
 
+/****** Waveform telemetry screens *********/
+#ifdef WAVEFORM_TELEMETRY
+
+#ifdef WAVEFORM_TELEMETRY_BUFLIB
+static bool dbg_wf_buflib(void)
+{
+    int button;
+    bool done = false;
+    FOR_NB_SCREENS(i)
+        screens[i].setfont(FONT_SYSFIXED);
+    while (!done)
+    {
+        struct wf_buflib_counters c;
+        uint32_t frag;
+        button = get_action(CONTEXT_STD, HZ/2);
+        if (button == ACTION_STD_CANCEL)
+            done = true;
+        wf_buflib_sample_now();
+        wf_buflib_counters_get(&c);
+        frag = wf_buflib_frag_ratio_x10000();
+        FOR_NB_SCREENS(i)
+        {
+            int line = 0;
+            screens[i].clear_display();
+            screens[i].putsf(0, line++, "WF Buflib");
+            screens[i].putsf(0, line++, "alloc:%lu free:%lu",
+                             (unsigned long)c.alloc_count,
+                             (unsigned long)c.free_count);
+            screens[i].putsf(0, line++, "move:%lu cmpct:%lu",
+                             (unsigned long)c.move_count,
+                             (unsigned long)c.compact_count);
+            screens[i].putsf(0, line++, "pin:%lu unpin:%lu",
+                             (unsigned long)c.pin_count,
+                             (unsigned long)c.unpin_count);
+            screens[i].putsf(0, line++, "curPin:%lu pkPin:%lu",
+                             (unsigned long)c.cur_pinned_handles,
+                             (unsigned long)c.peak_pinned_handles);
+            screens[i].putsf(0, line++, "frag:%lu.%02lu%%",
+                             (unsigned long)(frag / 100),
+                             (unsigned long)(frag % 100));
+            screens[i].putsf(0, line++, "minCtg:%lu",
+                             (unsigned long)c.min_largest_contig);
+            screens[i].putsf(0, line++, "totFre:%lu",
+                             (unsigned long)c.last_total_free);
+            screens[i].update();
+        }
+    }
+    FOR_NB_SCREENS(i)
+        screens[i].setfont(FONT_UI);
+    return false;
+}
+#endif /* WAVEFORM_TELEMETRY_BUFLIB */
+
+#ifdef WAVEFORM_TELEMETRY_PCMBUF
+static bool dbg_wf_pcmbuf(void)
+{
+    int button;
+    bool done = false;
+    FOR_NB_SCREENS(i)
+        screens[i].setfont(FONT_SYSFIXED);
+    while (!done)
+    {
+        struct wf_pcmbuf_counters c;
+        button = get_action(CONTEXT_STD, HZ/2);
+        if (button == ACTION_STD_CANCEL)
+            done = true;
+        wf_pcmbuf_counters_get(&c);
+        FOR_NB_SCREENS(i)
+        {
+            int line = 0;
+            screens[i].clear_display();
+            screens[i].putsf(0, line++, "WF PCMBuf");
+            screens[i].putsf(0, line++, "lowEnt:%lu lowExt:%lu",
+                             (unsigned long)c.low_entry_count,
+                             (unsigned long)c.low_exit_count);
+            screens[i].putsf(0, line++, "minFil:%lu B",
+                             (unsigned long)c.min_fill_ever);
+            screens[i].putsf(0, line++, "lowTck:%lu",
+                             (unsigned long)c.low_total_ticks);
+            screens[i].putsf(0, line++, "inLow:%s",
+                             c.in_low_state ? "YES" : "no");
+            screens[i].update();
+        }
+    }
+    FOR_NB_SCREENS(i)
+        screens[i].setfont(FONT_UI);
+    return false;
+}
+#endif /* WAVEFORM_TELEMETRY_PCMBUF */
+
+#ifdef WAVEFORM_TELEMETRY_CODEC
+static bool dbg_wf_codec(void)
+{
+    int button;
+    bool done = false;
+    struct wf_codec_record recs[WF_CODEC_MAX_FORMATS];
+    size_t count = 0;
+    FOR_NB_SCREENS(i)
+        screens[i].setfont(FONT_SYSFIXED);
+    while (!done)
+    {
+        int slot;
+        button = get_action(CONTEXT_STD, HZ/2);
+        if (button == ACTION_STD_CANCEL)
+            done = true;
+        wf_codec_get_records(recs, WF_CODEC_MAX_FORMATS, &count);
+        FOR_NB_SCREENS(i)
+        {
+            int line = 0;
+            screens[i].clear_display();
+            screens[i].putsf(0, line++, "WF Codec (%lu)",
+                             (unsigned long)count);
+            for (slot = 0; slot < (int)count; slot++)
+            {
+                screens[i].putsf(0, line++,
+                    "f%u ld%lu/%lut rn%lu/%lut",
+                    (unsigned)recs[slot].afmt,
+                    (unsigned long)recs[slot].load_count,
+                    (unsigned long)recs[slot].load_ticks_max,
+                    (unsigned long)recs[slot].run_count,
+                    (unsigned long)recs[slot].run_ticks_max);
+            }
+            if (count == 0)
+                screens[i].puts(0, line, "no data");
+            screens[i].update();
+        }
+    }
+    FOR_NB_SCREENS(i)
+        screens[i].setfont(FONT_UI);
+    return false;
+}
+#endif /* WAVEFORM_TELEMETRY_CODEC */
+
+#ifdef WAVEFORM_TELEMETRY_STORAGE
+static bool dbg_wf_storage(void)
+{
+    int button;
+    bool done = false;
+    FOR_NB_SCREENS(i)
+        screens[i].setfont(FONT_SYSFIXED);
+    while (!done)
+    {
+        struct wf_storage_counters c;
+        button = get_action(CONTEXT_STD, HZ/2);
+        if (button == ACTION_STD_CANCEL)
+            done = true;
+        wf_storage_counters_get(&c);
+        FOR_NB_SCREENS(i)
+        {
+            int b, shown;
+            int line = 0;
+            screens[i].clear_display();
+            screens[i].putsf(0, line++, "WF Storage");
+            screens[i].putsf(0, line++, "rd:%lu wr:%lu",
+                             (unsigned long)c.read_count,
+                             (unsigned long)c.write_count);
+            screens[i].putsf(0, line++, "seqRd:%lu disRd:%lu",
+                             (unsigned long)c.sequential_reads,
+                             (unsigned long)c.discontinuous_reads);
+            screens[i].putsf(0, line++, "maxRd:%lu ticks",
+                             (unsigned long)c.max_read_ticks);
+            screens[i].putsf(0, line++, "wakes:%lu maxGap:%lu",
+                             (unsigned long)c.wake_count,
+                             (unsigned long)c.max_wake_gap_ticks);
+            shown = 0;
+            for (b = 0; b < WF_STORAGE_HIST_BUCKETS && shown < 4; b++)
+            {
+                if (c.read_hist[b])
+                {
+                    screens[i].putsf(0, line++, "h[%d]:%lu",
+                                     b, (unsigned long)c.read_hist[b]);
+                    shown++;
+                }
+            }
+            screens[i].update();
+        }
+    }
+    FOR_NB_SCREENS(i)
+        screens[i].setfont(FONT_UI);
+    return false;
+}
+#endif /* WAVEFORM_TELEMETRY_STORAGE */
+
+#endif /* WAVEFORM_TELEMETRY */
+
 /****** The menu *********/
 static const struct {
     unsigned char *desc; /* string or ID */
@@ -2925,6 +3114,20 @@ static const struct {
         {"View SysCfg", dbg_syscfg },
         {"Dump bootflash to file", dbg_bootflash_dump },
 #endif
+#ifdef WAVEFORM_TELEMETRY
+#ifdef WAVEFORM_TELEMETRY_BUFLIB
+        {"WF: Buflib",  dbg_wf_buflib  },
+#endif
+#ifdef WAVEFORM_TELEMETRY_PCMBUF
+        {"WF: PCMBuf",  dbg_wf_pcmbuf  },
+#endif
+#ifdef WAVEFORM_TELEMETRY_CODEC
+        {"WF: Codec",   dbg_wf_codec   },
+#endif
+#ifdef WAVEFORM_TELEMETRY_STORAGE
+        {"WF: Storage", dbg_wf_storage },
+#endif
+#endif /* WAVEFORM_TELEMETRY */
 };
 
 static int menu_action_callback(int btn, struct gui_synclist *lists)

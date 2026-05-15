@@ -30,6 +30,9 @@
 #include "core_alloc.h" /* core_available / core_allocatable */
 #endif
 
+_Static_assert(sizeof(struct wf_event) == 28,
+               "wf_event size changed — update WF_EVT_FMT in wf-trace-decode.py");
+
 /* Backing ring in BSS — zero-initialised at boot, no allocation. */
 static struct wf_event wf_event_ring[WF_EVENT_RING_SIZE];
 static volatile size_t wf_event_head;   /* next write index, [0, RING_SIZE) */
