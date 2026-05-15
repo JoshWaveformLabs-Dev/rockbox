@@ -264,5 +264,51 @@ void wf_codec_get_records(struct wf_codec_record *out, size_t max_records,
 
 #endif /* WAVEFORM_TELEMETRY_CODEC */
 
+/* ----- D5: storage subsystem ------------------------------------------ */
+#ifdef WAVEFORM_TELEMETRY_STORAGE
+
+/* 16 log2(ticks) buckets: 0, 1, 2, 4, 8, ..., 16384, >=32768. HZ=100 on
+ * iPod target → bucket 7 = 128 ticks ≈ 1.28 s. The rockpod observed
+ * ~530 ms HDD wake (docs/research/ROCKPOD_REFERENCE.md), so the histogram
+ * resolves both fast-flash (≤1 tick) and slow-HDD-wake (≥50 tick) cleanly. */
+#define WF_STORAGE_HIST_BUCKETS 16
+
+/* Per-op counters. Reads and writes are split because seek pattern and
+ * wake-cost diverge (writes are typically batched flushes; reads dominate
+ * playback). Sequential detection: last_*_end_lba is "first LBA AFTER
+ * prior range", so sequential iff next start == last_end. */
+struct wf_storage_counters {
+    uint32_t read_count;
+    uint32_t write_count;
+    uint32_t read_hist[WF_STORAGE_HIST_BUCKETS];
+    uint32_t write_hist[WF_STORAGE_HIST_BUCKETS];
+    uint32_t max_read_ticks;
+    uint32_t max_write_ticks;
+    uint32_t sequential_reads;
+    uint32_t discontinuous_reads;
+    uint32_t sequential_writes;
+    uint32_t discontinuous_writes;
+    uint32_t wake_count;          /* requests >100 ticks (1 s) after prior end */
+    uint32_t max_wake_gap_ticks;
+};
+
+/* Hot-path hooks. Call sites pass drive via IF_MD_DRV(drive) (mv.h) so
+ * single-drive builds synthesise 0 and multi-drive builds forward the
+ * real index — keeps this header free of mv.h. start is sector_t
+ * (uint64_t); event payload stores the low 32 bits (iPod 6g/7g sectors
+ * fit comfortably; decode script documents the truncation).
+ *
+ * Ordering: events emit INSIDE the IRQ-save critical section (matches
+ * D4 pcmbuf — see DECISIONS.md 2026-05-14). BEGIN/END/WAKE ordering in
+ * the ring must strictly track counter state. */
+void wf_storage_note_read_begin(int drive, uint64_t start, int count);
+void wf_storage_note_read_end(int drive, uint64_t start, int count, int rc);
+void wf_storage_note_write_begin(int drive, uint64_t start, int count);
+void wf_storage_note_write_end(int drive, uint64_t start, int count, int rc);
+
+void wf_storage_counters_get(struct wf_storage_counters *out);
+
+#endif /* WAVEFORM_TELEMETRY_STORAGE */
+
 #endif /* WAVEFORM_TELEMETRY */
 #endif /* _WF_TELEMETRY_H_ */

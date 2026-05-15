@@ -400,4 +400,138 @@ void wf_codec_get_records(struct wf_codec_record *out, size_t max_records,
 
 #endif /* WAVEFORM_TELEMETRY_CODEC */
 
+/* ----- D5: storage latency histograms -------------------------------- */
+#ifdef WAVEFORM_TELEMETRY_STORAGE
+
+static struct {
+    struct wf_storage_counters counters;
+    uint32_t last_read_begin_tick;
+    uint32_t last_write_begin_tick;
+    uint32_t last_request_end_tick;  /* end of most recent read OR write */
+    uint64_t last_read_end_lba;      /* first LBA after last read range */
+    uint64_t last_write_end_lba;     /* first LBA after last write range */
+    bool     have_prior_request;     /* gate wake check until 2nd request */
+    bool     have_prior_read;        /* gate sequential check until 2nd read */
+    bool     have_prior_write;       /* gate sequential check until 2nd write */
+} wf_storage_state;
+
+/* log2(ticks) bucket, clamped 0..15. 0 → bucket 0; 1 → 0; 2,3 → 1; 4..7 → 2; ... */
+static unsigned wf_storage_bucket(uint32_t ticks)
+{
+    unsigned b = 0;
+    while (ticks >= 2u && b < WF_STORAGE_HIST_BUCKETS - 1)
+    {
+        ticks >>= 1;
+        b++;
+    }
+    return b;
+}
+
+static void wf_storage_note_begin(uint16_t evt, int drive,
+                                  uint64_t start, int count)
+{
+    uint32_t now = (uint32_t)current_tick;
+    int irq = disable_irq_save();
+    if (wf_storage_state.have_prior_request)
+    {
+        uint32_t gap = now - wf_storage_state.last_request_end_tick;
+        if (gap > 100)
+        {
+            wf_storage_state.counters.wake_count++;
+            if (gap > wf_storage_state.counters.max_wake_gap_ticks)
+                wf_storage_state.counters.max_wake_gap_ticks = gap;
+            wf_event_record(WF_SUB_STORAGE, WF_EVT_STORAGE_WAKE,
+                            (uint32_t)drive, gap,
+                            (uint32_t)start, (uint32_t)count);
+        }
+    }
+    if (evt == WF_EVT_STORAGE_READ_BEGIN)
+        wf_storage_state.last_read_begin_tick = now;
+    else
+        wf_storage_state.last_write_begin_tick = now;
+    wf_event_record(WF_SUB_STORAGE, evt,
+                    (uint32_t)drive, (uint32_t)start,
+                    (uint32_t)count, now);
+    restore_irq(irq);
+}
+
+static void wf_storage_note_end(uint16_t evt, int drive,
+                                uint64_t start, int count, int rc)
+{
+    uint32_t now = (uint32_t)current_tick;
+    int irq = disable_irq_save();
+    uint32_t begin = (evt == WF_EVT_STORAGE_READ_END)
+                     ? wf_storage_state.last_read_begin_tick
+                     : wf_storage_state.last_write_begin_tick;
+    uint32_t elapsed = now - begin;
+    unsigned bucket = wf_storage_bucket(elapsed);
+    if (evt == WF_EVT_STORAGE_READ_END)
+    {
+        wf_storage_state.counters.read_count++;
+        wf_storage_state.counters.read_hist[bucket]++;
+        if (elapsed > wf_storage_state.counters.max_read_ticks)
+            wf_storage_state.counters.max_read_ticks = elapsed;
+        if (wf_storage_state.have_prior_read)
+        {
+            if (start == wf_storage_state.last_read_end_lba)
+                wf_storage_state.counters.sequential_reads++;
+            else
+                wf_storage_state.counters.discontinuous_reads++;
+        }
+        wf_storage_state.last_read_end_lba = start + (uint64_t)count;
+        wf_storage_state.have_prior_read = true;
+    }
+    else
+    {
+        wf_storage_state.counters.write_count++;
+        wf_storage_state.counters.write_hist[bucket]++;
+        if (elapsed > wf_storage_state.counters.max_write_ticks)
+            wf_storage_state.counters.max_write_ticks = elapsed;
+        if (wf_storage_state.have_prior_write)
+        {
+            if (start == wf_storage_state.last_write_end_lba)
+                wf_storage_state.counters.sequential_writes++;
+            else
+                wf_storage_state.counters.discontinuous_writes++;
+        }
+        wf_storage_state.last_write_end_lba = start + (uint64_t)count;
+        wf_storage_state.have_prior_write = true;
+    }
+    wf_storage_state.last_request_end_tick = now;
+    wf_storage_state.have_prior_request = true;
+    wf_event_record(WF_SUB_STORAGE, evt,
+                    (uint32_t)drive, (uint32_t)start,
+                    elapsed, (uint32_t)rc);
+    restore_irq(irq);
+}
+
+void wf_storage_note_read_begin(int drive, uint64_t start, int count)
+{
+    wf_storage_note_begin(WF_EVT_STORAGE_READ_BEGIN, drive, start, count);
+}
+
+void wf_storage_note_read_end(int drive, uint64_t start, int count, int rc)
+{
+    wf_storage_note_end(WF_EVT_STORAGE_READ_END, drive, start, count, rc);
+}
+
+void wf_storage_note_write_begin(int drive, uint64_t start, int count)
+{
+    wf_storage_note_begin(WF_EVT_STORAGE_WRITE_BEGIN, drive, start, count);
+}
+
+void wf_storage_note_write_end(int drive, uint64_t start, int count, int rc)
+{
+    wf_storage_note_end(WF_EVT_STORAGE_WRITE_END, drive, start, count, rc);
+}
+
+void wf_storage_counters_get(struct wf_storage_counters *out)
+{
+    int irq = disable_irq_save();
+    *out = wf_storage_state.counters;
+    restore_irq(irq);
+}
+
+#endif /* WAVEFORM_TELEMETRY_STORAGE */
+
 #endif /* WAVEFORM_TELEMETRY */

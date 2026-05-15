@@ -24,6 +24,7 @@
 #include "usb.h"
 #include "disk.h"
 #include "pathfuncs.h"
+#include "wf_telemetry.h"
 
 #ifdef HAVE_SDMMC_HOST
 # include "sdmmc_host.h"
@@ -367,7 +368,12 @@ int storage_init(void)
 int storage_read_sectors(IF_MD(int drive,) sector_t start, int count,
                          void* buf)
 {
+    int rc = -1;
+#ifdef WAVEFORM_TELEMETRY_STORAGE
+    wf_storage_note_read_begin(IF_MD_DRV(drive), start, count);
+#endif
 #ifdef CONFIG_STORAGE_MULTI
+    {
     int driver=(storage_drivers[drive] & DRIVER_MASK)>>DRIVER_OFFSET;
     int ldrive=(storage_drivers[drive] & DRIVE_MASK)>>DRIVE_OFFSET;
 
@@ -375,41 +381,53 @@ int storage_read_sectors(IF_MD(int drive,) sector_t start, int count,
     {
 #if (CONFIG_STORAGE & STORAGE_ATA)
     case STORAGE_ATA:
-        return ata_read_sectors(IF_MD(ldrive,) start,count,buf);
+        rc = ata_read_sectors(IF_MD(ldrive,) start,count,buf);
+        break;
 #endif
 
 #if (CONFIG_STORAGE & STORAGE_MMC)
     case STORAGE_MMC:
-        return mmc_read_sectors(IF_MD(ldrive,) start,count,buf);
+        rc = mmc_read_sectors(IF_MD(ldrive,) start,count,buf);
+        break;
 #endif
 
 #if (CONFIG_STORAGE & STORAGE_SD)
     case STORAGE_SD:
-        return sd_read_sectors(IF_MD(ldrive,) start,count,buf);
+        rc = sd_read_sectors(IF_MD(ldrive,) start,count,buf);
+        break;
 #endif
 
 #if (CONFIG_STORAGE & STORAGE_NAND)
     case STORAGE_NAND:
-        return nand_read_sectors(IF_MD(ldrive,) start,count,buf);
+        rc = nand_read_sectors(IF_MD(ldrive,) start,count,buf);
+        break;
 #endif
 
 #if (CONFIG_STORAGE & STORAGE_RAMDISK)
     case STORAGE_RAMDISK:
-        return ramdisk_read_sectors(IF_MD(ldrive,) start,count,buf);
+        rc = ramdisk_read_sectors(IF_MD(ldrive,) start,count,buf);
+        break;
 #endif
     }
-
-    return -1;
+    }
 #else /* CONFIG_STORAGE_MULTI */
-    return STORAGE_FUNCTION(read_sectors)(IF_MD(drive,)start,count,buf);
+    rc = STORAGE_FUNCTION(read_sectors)(IF_MD(drive,)start,count,buf);
 #endif /* CONFIG_STORAGE_MULTI */
-
+#ifdef WAVEFORM_TELEMETRY_STORAGE
+    wf_storage_note_read_end(IF_MD_DRV(drive), start, count, rc);
+#endif
+    return rc;
 }
 
 int storage_write_sectors(IF_MD(int drive,) sector_t start, int count,
                           const void* buf)
 {
+    int rc = -1;
+#ifdef WAVEFORM_TELEMETRY_STORAGE
+    wf_storage_note_write_begin(IF_MD_DRV(drive), start, count);
+#endif
 #ifdef CONFIG_STORAGE_MULTI
+    {
     int driver=(storage_drivers[drive] & DRIVER_MASK)>>DRIVER_OFFSET;
     int ldrive=(storage_drivers[drive] & DRIVE_MASK)>>DRIVE_OFFSET;
 
@@ -417,34 +435,42 @@ int storage_write_sectors(IF_MD(int drive,) sector_t start, int count,
     {
 #if (CONFIG_STORAGE & STORAGE_ATA)
     case STORAGE_ATA:
-        return ata_write_sectors(IF_MD(ldrive,)start,count,buf);
+        rc = ata_write_sectors(IF_MD(ldrive,)start,count,buf);
+        break;
 #endif
 
 #if (CONFIG_STORAGE & STORAGE_MMC)
     case STORAGE_MMC:
-        return mmc_write_sectors(IF_MD(ldrive,)start,count,buf);
+        rc = mmc_write_sectors(IF_MD(ldrive,)start,count,buf);
+        break;
 #endif
 
 #if (CONFIG_STORAGE & STORAGE_SD)
     case STORAGE_SD:
-        return sd_write_sectors(IF_MD(ldrive,)start,count,buf);
+        rc = sd_write_sectors(IF_MD(ldrive,)start,count,buf);
+        break;
 #endif
 
 #if (CONFIG_STORAGE & STORAGE_NAND)
     case STORAGE_NAND:
-        return nand_write_sectors(IF_MD(ldrive,)start,count,buf);
+        rc = nand_write_sectors(IF_MD(ldrive,)start,count,buf);
+        break;
 #endif
 
 #if (CONFIG_STORAGE & STORAGE_RAMDISK)
     case STORAGE_RAMDISK:
-        return ramdisk_write_sectors(IF_MD(ldrive,)start,count,buf);
+        rc = ramdisk_write_sectors(IF_MD(ldrive,)start,count,buf);
+        break;
 #endif
     }
-
-    return -1;
+    }
 #else /* CONFIG_STORAGE_MULTI */
-    return STORAGE_FUNCTION(write_sectors)(IF_MD(drive,)start,count,buf);
+    rc = STORAGE_FUNCTION(write_sectors)(IF_MD(drive,)start,count,buf);
 #endif /* CONFIG_STORAGE_MULTI */
+#ifdef WAVEFORM_TELEMETRY_STORAGE
+    wf_storage_note_write_end(IF_MD_DRV(drive), start, count, rc);
+#endif
+    return rc;
 }
 
 #ifdef CONFIG_STORAGE_MULTI
