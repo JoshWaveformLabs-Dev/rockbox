@@ -194,7 +194,10 @@ void wf_stack_get_records(struct wf_stack_record *out_records,
 
 uint32_t wf_stack_get_overrun_total(void);
 uint32_t wf_stack_get_scan_count(void);
+void wf_canary_worker_init(void);
 
+#else  /* !WAVEFORM_TELEMETRY_STACK */
+static inline void wf_canary_worker_init(void) {}
 #endif /* WAVEFORM_TELEMETRY_STACK */
 
 /* ----- D4: pcmbuf subsystem ------------------------------------------- */

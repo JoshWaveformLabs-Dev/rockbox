@@ -457,4 +457,33 @@ uint32_t wf_stack_get_scan_count(void)
 {
     return wf_stack_scan_total;
 }
+
+/* ----- S2-D5: periodic canary worker ------------------------------------- */
+#define WF_CANARY_WORKER_INTERVAL  (5 * HZ)
+#define WF_CANARY_WORKER_STACK_SZ  128          /* words — 512 B on 32-bit */
+
+static long         wf_canary_worker_stack[WF_CANARY_WORKER_STACK_SZ];
+static unsigned int wf_canary_worker_id;
+
+static void wf_canary_worker_thread(void)
+{
+    while (1)
+    {
+        sleep(WF_CANARY_WORKER_INTERVAL);
+        wf_stack_scan_now();
+    }
+}
+
+void wf_canary_worker_init(void)
+{
+    wf_canary_worker_id = create_thread(
+        wf_canary_worker_thread,
+        wf_canary_worker_stack,
+        sizeof(wf_canary_worker_stack),
+        0,
+        "wf-canary"
+        IF_PRIO(, PRIORITY_BACKGROUND)
+        IF_COP(, CPU));
+}
+
 #endif /* WAVEFORM_TELEMETRY_STACK */

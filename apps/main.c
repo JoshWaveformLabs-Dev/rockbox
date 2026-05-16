@@ -48,6 +48,7 @@
 #include "audio.h"
 #include "settings.h"
 #include "backlight.h"
+#include "wf_telemetry.h"
 #include "status.h"
 #include "debug_menu.h"
 #include "font.h"
@@ -406,6 +407,7 @@ static void init(void)
     button_init();
     powermgmt_init();
     backlight_init();
+    wf_canary_worker_init();
     unicode_init();
 #ifdef HAVE_MULTIVOLUME
     init_volume_names();
@@ -545,6 +547,7 @@ static void init(void)
 #endif
 
     backlight_init();
+    wf_canary_worker_init();
 
     button_init();
 
