@@ -67,6 +67,7 @@
 #undef HAVE_FMRADIO           /* Waveform m7: FM radio stripped */
 #define WAVEFORM_NO_CROSSFADE /* Waveform m8: crossfade stripped (consumed by config.h:1082) */
 #define WAVEFORM_STRIP_CODECS /* Waveform m9: codec set trimmed to MP3/AAC/FLAC/ALAC/Opus */
+#define WAVEFORM_WFLIB        /* Waveform stage 3: compact library index reader */
 
 /* Waveform OS post-m9 Stage 1 instrumentation. Engineering builds only.
  * Production builds: comment out the WAVEFORM_TELEMETRY line — every hook

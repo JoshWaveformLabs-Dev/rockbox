@@ -147,6 +147,10 @@
 #include "wf_telemetry.h"
 #endif
 
+#ifdef WAVEFORM_WFLIB
+#include "wf_lib_reader.h"
+#endif
+
 #define SCREEN_MAX_CHARS (LCD_WIDTH / SYSFONT_WIDTH)
 
 static const char* threads_getname(int selected_item, void *data,
@@ -2989,6 +2993,73 @@ static bool dbg_wf_storage(void)
 
 #endif /* WAVEFORM_TELEMETRY */
 
+#ifdef WAVEFORM_WFLIB
+static bool dbg_wf_lib(void)
+{
+    int button;
+    bool done = false;
+    enum wf_lib_state st;
+    FOR_NB_SCREENS(i)
+        screens[i].setfont(FONT_SYSFIXED);
+    st = wf_lib_mount("/.rockbox/waveform/library.wflib");
+    while (!done)
+    {
+        button = get_action(CONTEXT_STD, HZ/2);
+        if (button == ACTION_STD_CANCEL)
+            done = true;
+        FOR_NB_SCREENS(i)
+        {
+            int line = 0;
+            const char *sname = (st == WF_LIB_STATE_MOUNTED)   ? "MOUNTED"   :
+                                (st == WF_LIB_STATE_INVALID)   ? "INVALID"   :
+                                                                 "UNMOUNTED";
+            screens[i].clear_display();
+            screens[i].putsf(0, line++, "WF Library");
+            screens[i].putsf(0, line++, "state: %s", sname);
+            if (st == WF_LIB_STATE_MOUNTED)
+            {
+                screens[i].putsf(0, line++, "tracks:%lu dur:%lus",
+                                 (unsigned long)wf_lib_track_count(),
+                                 (unsigned long)wf_lib_total_duration_s());
+                screens[i].putsf(0, line++, "bld:%08lx%08lx",
+                                 (unsigned long)(wf_lib_builder_id() >> 32),
+                                 (unsigned long)(wf_lib_builder_id() & 0xFFFFFFFFu));
+                screens[i].putsf(0, line++, "dict a%lu al%lu g%lu c%lu",
+                                 (unsigned long)wf_lib_artist_count(),
+                                 (unsigned long)wf_lib_album_count(),
+                                 (unsigned long)wf_lib_genre_count(),
+                                 (unsigned long)wf_lib_composer_count());
+                screens[i].putsf(0, line++, "srt t%lu at%lu aa%lu c%lu",
+                                 (unsigned long)wf_lib_sort_count(WFLIB_SEC_SORT_TITLE),
+                                 (unsigned long)wf_lib_sort_count(WFLIB_SEC_SORT_ALBUM_TRACK),
+                                 (unsigned long)wf_lib_sort_count(WFLIB_SEC_SORT_ARTIST_ALBUM),
+                                 (unsigned long)wf_lib_sort_count(WFLIB_SEC_SORT_COMPOSER_ALBUM_TRACK));
+                for (uint32_t t = 0; t < 3 && t < wf_lib_track_count(); t++)
+                {
+                    struct wflib_track_record rec;
+                    char title[20];
+                    int n;
+                    if (wf_lib_get_track(t, &rec) != 0)
+                        continue;
+                    n = wf_lib_resolve_string(rec.title_string_offset,
+                                              title, sizeof(title) - 1);
+                    if (n < 0) n = 0;
+                    title[n] = '\0';
+                    screens[i].putsf(0, line++, "%lu:%us %s",
+                                     (unsigned long)t,
+                                     (unsigned)rec.duration_s, title);
+                }
+            }
+            screens[i].update();
+        }
+    }
+    wf_lib_unmount();
+    FOR_NB_SCREENS(i)
+        screens[i].setfont(FONT_UI);
+    return false;
+}
+#endif /* WAVEFORM_WFLIB */
+
 /****** The menu *********/
 static const struct {
     unsigned char *desc; /* string or ID */
@@ -3128,6 +3199,9 @@ static const struct {
         {"WF: Storage", dbg_wf_storage },
 #endif
 #endif /* WAVEFORM_TELEMETRY */
+#ifdef WAVEFORM_WFLIB
+        {"WF: Library", dbg_wf_lib    },
+#endif
 };
 
 static int menu_action_callback(int btn, struct gui_synclist *lists)
