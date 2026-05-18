@@ -48,6 +48,8 @@
 #include "file.h"
 #include "crc32.h"
 #include "core_alloc.h"
+#include "mutex.h"
+#include <stdbool.h>
 #include <string.h>
 #include <stdint.h>
 #include <stddef.h>
@@ -112,6 +114,15 @@ static struct {
     uint32_t path_pool_string_count;
     uint32_t path_pool_bucket_table_abs;
 } g_lib;
+
+/* D4.1 thread-safety: every public wf_lib_* function takes this mutex
+ * coarsely. Reads are short, the API is small, and the mutex protects
+ * g_lib + buflib handles against concurrent unmount/remount on the
+ * browser/playlist hot paths. Internal helpers (read_at, parse_section_
+ * table, wflib_cleanup, …) are unlocked and only called from already-
+ * locked public entry points. */
+static struct mutex g_lib_mutex;
+static bool         g_lib_inited;
 
 /* ----- helpers -------------------------------------------------------- */
 
@@ -498,64 +509,101 @@ invalid:
 
 /* ----- public API ----------------------------------------------------- */
 
+void wf_lib_init(void) {
+    /* Idempotent. Called once at boot from apps/main.c. Guarded so a
+     * stray second call cannot reset an in-use mutex. */
+    if (g_lib_inited) return;
+    mutex_init(&g_lib_mutex);
+    g_lib_inited = true;
+}
+
 enum wf_lib_state wf_lib_mount(const char *path) {
     if (!path || !path[0]) return WF_LIB_STATE_UNMOUNTED;
+
+    mutex_lock(&g_lib_mutex);
+    enum wf_lib_state ret;
 
     /* Idempotent / remount handling. */
     if (g_lib.state == WF_LIB_STATE_MOUNTED &&
         strncmp(g_lib.mounted_path, path, WFLIB_MAX_PATH - 1) == 0) {
-        return WF_LIB_STATE_MOUNTED;
+        ret = WF_LIB_STATE_MOUNTED;
+        goto out;
     }
     wflib_cleanup();
     g_lib.state = WF_LIB_STATE_UNMOUNTED;
 
     /* Snapshot path before any I/O so remount checks work. Bounded copy. */
     size_t plen = strlen(path);
-    if (plen >= WFLIB_MAX_PATH) return WF_LIB_STATE_INVALID;
+    if (plen >= WFLIB_MAX_PATH) { ret = WF_LIB_STATE_INVALID; goto out; }
     memcpy(g_lib.mounted_path, path, plen + 1);
 
-    enum wf_lib_state s = wflib_mount_internal(path);
-    if (s != WF_LIB_STATE_MOUNTED) {
+    ret = wflib_mount_internal(path);
+    if (ret != WF_LIB_STATE_MOUNTED) {
         g_lib.mounted_path[0] = '\0';
     }
-    return s;
+
+out:
+    mutex_unlock(&g_lib_mutex);
+    return ret;
 }
 
 void wf_lib_unmount(void) {
+    mutex_lock(&g_lib_mutex);
     wflib_cleanup();
     g_lib.state = WF_LIB_STATE_UNMOUNTED;
+    mutex_unlock(&g_lib_mutex);
 }
 
 enum wf_lib_state wf_lib_state(void) {
-    return g_lib.state;
+    mutex_lock(&g_lib_mutex);
+    enum wf_lib_state s = g_lib.state;
+    mutex_unlock(&g_lib_mutex);
+    return s;
 }
 
-uint32_t wf_lib_track_count(void) {
-    return (g_lib.state == WF_LIB_STATE_MOUNTED) ? g_lib.hdr.track_count : 0;
-}
-uint32_t wf_lib_total_duration_s(void) {
-    return (g_lib.state == WF_LIB_STATE_MOUNTED) ? g_lib.hdr.total_duration_s : 0;
-}
-uint64_t wf_lib_builder_id(void) {
-    return (g_lib.state == WF_LIB_STATE_MOUNTED) ? g_lib.hdr.builder_id : 0;
-}
-uint64_t wf_lib_source_mtime(void) {
-    return (g_lib.state == WF_LIB_STATE_MOUNTED) ? g_lib.hdr.source_mtime : 0;
-}
-uint32_t wf_lib_artist_count(void)   { return (g_lib.state == WF_LIB_STATE_MOUNTED) ? g_lib.artist_count : 0; }
-uint32_t wf_lib_album_count(void)    { return (g_lib.state == WF_LIB_STATE_MOUNTED) ? g_lib.album_count : 0; }
-uint32_t wf_lib_genre_count(void)    { return (g_lib.state == WF_LIB_STATE_MOUNTED) ? g_lib.genre_count : 0; }
-uint32_t wf_lib_composer_count(void) { return (g_lib.state == WF_LIB_STATE_MOUNTED) ? g_lib.composer_count : 0; }
+#define WFLIB_LOCKED_U32(expr)                                       \
+    do {                                                             \
+        mutex_lock(&g_lib_mutex);                                    \
+        uint32_t _v = (g_lib.state == WF_LIB_STATE_MOUNTED) ? (expr) : 0; \
+        mutex_unlock(&g_lib_mutex);                                  \
+        return _v;                                                   \
+    } while (0)
+
+#define WFLIB_LOCKED_U64(expr)                                       \
+    do {                                                             \
+        mutex_lock(&g_lib_mutex);                                    \
+        uint64_t _v = (g_lib.state == WF_LIB_STATE_MOUNTED) ? (expr) : 0; \
+        mutex_unlock(&g_lib_mutex);                                  \
+        return _v;                                                   \
+    } while (0)
+
+uint32_t wf_lib_track_count(void)       { WFLIB_LOCKED_U32(g_lib.hdr.track_count); }
+uint32_t wf_lib_total_duration_s(void)  { WFLIB_LOCKED_U32(g_lib.hdr.total_duration_s); }
+uint64_t wf_lib_builder_id(void)        { WFLIB_LOCKED_U64(g_lib.hdr.builder_id); }
+uint64_t wf_lib_source_mtime(void)      { WFLIB_LOCKED_U64(g_lib.hdr.source_mtime); }
+uint32_t wf_lib_artist_count(void)      { WFLIB_LOCKED_U32(g_lib.artist_count); }
+uint32_t wf_lib_album_count(void)       { WFLIB_LOCKED_U32(g_lib.album_count); }
+uint32_t wf_lib_genre_count(void)       { WFLIB_LOCKED_U32(g_lib.genre_count); }
+uint32_t wf_lib_composer_count(void)    { WFLIB_LOCKED_U32(g_lib.composer_count); }
+
+#undef WFLIB_LOCKED_U32
+#undef WFLIB_LOCKED_U64
 
 int wf_lib_get_track(uint32_t track_id, struct wflib_track_record *out) {
     if (!out) return -1;
-    if (g_lib.state != WF_LIB_STATE_MOUNTED) return -1;
-    if (track_id >= g_lib.hdr.track_count) return -1;
+    mutex_lock(&g_lib_mutex);
+    int rc = -1;
+    if (g_lib.state != WF_LIB_STATE_MOUNTED) goto out;
+    if (track_id >= g_lib.hdr.track_count) goto out;
     off_t off = (off_t)g_lib.off_track_records + 8 + (off_t)track_id * 32;
-    if (read_at(off, out, 32) != 0) return -1;
-    return 0;
+    if (read_at(off, out, 32) != 0) goto out;
+    rc = 0;
+out:
+    mutex_unlock(&g_lib_mutex);
+    return rc;
 }
 
+/* Caller MUST hold g_lib_mutex. */
 static int dict_get_generic(uint32_t base, uint32_t count, uint16_t id,
                             void *out, size_t entry_size) {
     if (!out) return -1;
@@ -567,16 +615,28 @@ static int dict_get_generic(uint32_t base, uint32_t count, uint16_t id,
 }
 
 int wf_lib_get_artist(uint16_t id, struct wflib_artist_entry *out) {
-    return dict_get_generic(g_lib.off_dict_artist, g_lib.artist_count, id, out, 8);
+    mutex_lock(&g_lib_mutex);
+    int rc = dict_get_generic(g_lib.off_dict_artist, g_lib.artist_count, id, out, 8);
+    mutex_unlock(&g_lib_mutex);
+    return rc;
 }
 int wf_lib_get_album(uint16_t id, struct wflib_album_entry *out) {
-    return dict_get_generic(g_lib.off_dict_album, g_lib.album_count, id, out, 16);
+    mutex_lock(&g_lib_mutex);
+    int rc = dict_get_generic(g_lib.off_dict_album, g_lib.album_count, id, out, 16);
+    mutex_unlock(&g_lib_mutex);
+    return rc;
 }
 int wf_lib_get_genre(uint16_t id, struct wflib_genre_entry *out) {
-    return dict_get_generic(g_lib.off_dict_genre, g_lib.genre_count, id, out, 8);
+    mutex_lock(&g_lib_mutex);
+    int rc = dict_get_generic(g_lib.off_dict_genre, g_lib.genre_count, id, out, 8);
+    mutex_unlock(&g_lib_mutex);
+    return rc;
 }
 int wf_lib_get_composer(uint16_t id, struct wflib_composer_entry *out) {
-    return dict_get_generic(g_lib.off_dict_composer, g_lib.composer_count, id, out, 8);
+    mutex_lock(&g_lib_mutex);
+    int rc = dict_get_generic(g_lib.off_dict_composer, g_lib.composer_count, id, out, 8);
+    mutex_unlock(&g_lib_mutex);
+    return rc;
 }
 
 static int sort_resolve(uint32_t sort_type,
@@ -604,23 +664,33 @@ static int sort_resolve(uint32_t sort_type,
 }
 
 uint32_t wf_lib_sort_track_at(uint32_t sort_type, uint32_t index) {
-    if (g_lib.state != WF_LIB_STATE_MOUNTED) return UINT32_MAX;
+    mutex_lock(&g_lib_mutex);
+    uint32_t ret = UINT32_MAX;
+    if (g_lib.state != WF_LIB_STATE_MOUNTED) goto out;
     uint32_t base = 0, count = 0;
-    if (sort_resolve(sort_type, &base, &count) != 0) return UINT32_MAX;
-    if (index >= count) return UINT32_MAX;
+    if (sort_resolve(sort_type, &base, &count) != 0) goto out;
+    if (index >= count) goto out;
     uint8_t buf[4];
     off_t off = (off_t)base + 8 + (off_t)index * 4;
-    if (read_at(off, buf, 4) != 0) return UINT32_MAX;
+    if (read_at(off, buf, 4) != 0) goto out;
     uint32_t tid = rd_u32(buf);
-    if (tid >= g_lib.hdr.track_count) return UINT32_MAX;
-    return tid;
+    if (tid >= g_lib.hdr.track_count) goto out;
+    ret = tid;
+out:
+    mutex_unlock(&g_lib_mutex);
+    return ret;
 }
 
 uint32_t wf_lib_sort_count(uint32_t sort_type) {
-    if (g_lib.state != WF_LIB_STATE_MOUNTED) return 0;
+    mutex_lock(&g_lib_mutex);
+    uint32_t ret = 0;
+    if (g_lib.state != WF_LIB_STATE_MOUNTED) goto out;
     uint32_t base = 0, count = 0;
-    if (sort_resolve(sort_type, &base, &count) != 0) return 0;
-    return count;
+    if (sort_resolve(sort_type, &base, &count) != 0) goto out;
+    ret = count;
+out:
+    mutex_unlock(&g_lib_mutex);
+    return ret;
 }
 
 /* ----- string / path pool decode ------------------------------------- */
@@ -703,6 +773,8 @@ static int decode_bucket_string(const uint8_t *scratch, size_t scratch_len,
     return (int)copy;
 }
 
+/* Caller MUST hold g_lib_mutex. Pin/unpin of scratch handle is internal
+ * to this function. */
 static int resolve_pool(uint32_t string_offset, char *out, size_t buflen,
                         uint32_t bucket_count, uint32_t bucket_table_abs)
 {
@@ -751,14 +823,20 @@ out:
 }
 
 int wf_lib_resolve_string(uint32_t off, char *out, size_t buflen) {
-    return resolve_pool(off, out, buflen,
-                        g_lib.string_pool_bucket_count,
-                        g_lib.string_pool_bucket_table_abs);
+    mutex_lock(&g_lib_mutex);
+    int rc = resolve_pool(off, out, buflen,
+                          g_lib.string_pool_bucket_count,
+                          g_lib.string_pool_bucket_table_abs);
+    mutex_unlock(&g_lib_mutex);
+    return rc;
 }
 int wf_lib_resolve_path(uint32_t off, char *out, size_t buflen) {
-    return resolve_pool(off, out, buflen,
-                        g_lib.path_pool_bucket_count,
-                        g_lib.path_pool_bucket_table_abs);
+    mutex_lock(&g_lib_mutex);
+    int rc = resolve_pool(off, out, buflen,
+                          g_lib.path_pool_bucket_count,
+                          g_lib.path_pool_bucket_table_abs);
+    mutex_unlock(&g_lib_mutex);
+    return rc;
 }
 
 #endif /* WAVEFORM_WFLIB */

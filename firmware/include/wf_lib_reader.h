@@ -54,6 +54,10 @@ enum wf_lib_state {
 
 #ifdef WAVEFORM_WFLIB
 
+/* One-shot initialiser: sets up the internal mutex. Idempotent. Must be
+ * called once at boot from apps/main.c BEFORE the first wf_lib_mount(). */
+void wf_lib_init(void);
+
 /* Mount the file at `path`. Idempotent for repeat calls with the same path.
  * A call with a different path while mounted will unmount and remount.
  *
@@ -119,6 +123,7 @@ int wf_lib_resolve_path(uint32_t path_offset, char *out, size_t buflen);
 
 #else /* !WAVEFORM_WFLIB — stubs so callers can compile unconditionally */
 
+static inline void wf_lib_init(void) { }
 static inline enum wf_lib_state wf_lib_mount(const char *path)
     { (void)path; return WF_LIB_STATE_UNMOUNTED; }
 static inline void wf_lib_unmount(void) { }

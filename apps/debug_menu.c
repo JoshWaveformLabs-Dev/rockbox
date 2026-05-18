@@ -3001,6 +3001,10 @@ static bool dbg_wf_lib(void)
     enum wf_lib_state st;
     FOR_NB_SCREENS(i)
         screens[i].setfont(FONT_SYSFIXED);
+    /* Ensures the reader's internal mutex exists before mount. The
+     * D4.2 auto-mount path also calls wf_lib_init() at boot — this
+     * call stays as a safety net for the debug-screen path. */
+    wf_lib_init();
     st = wf_lib_mount("/.rockbox/waveform/library.wflib");
     while (!done)
     {
