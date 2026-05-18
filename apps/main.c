@@ -49,6 +49,7 @@
 #include "settings.h"
 #include "backlight.h"
 #include "wf_telemetry.h"
+#include "wf_lib_reader.h"
 #include "status.h"
 #include "debug_menu.h"
 #include "font.h"
@@ -748,6 +749,19 @@ static void init(void)
     init_tagcache();
     CHART("<init_tagcache");
 #endif
+
+    /* Stage 3 D4.2: bring up the WFLIB compact library index.
+     * wf_lib_init() sets up the reader's internal mutex; wf_lib_mount()
+     * is a silent no-op if the file is missing or fails validation —
+     * higher layers (D4.3 browser) fall back to the FAT browser. The
+     * APPLICATION SDL build remaps /.rockbox/... to
+     * $HOME/.config/rockbox.org/... at runtime. */
+    CHART(">wf_lib_init");
+    wf_lib_init();
+    CHART("<wf_lib_init");
+    CHART(">wf_lib_mount");
+    wf_lib_mount("/.rockbox/waveform/library.wflib");
+    CHART("<wf_lib_mount");
 
 #ifdef HAVE_EEPROM_SETTINGS
     if (firmware_settings.initialized)
