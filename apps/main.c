@@ -453,6 +453,9 @@ static void init(void)
     playlist_init();
     shortcuts_init();
 
+    wf_lib_init();
+    wf_lib_mount("/.rockbox/waveform/library.wflib");
+
     audio_init();
     talk_announce_voice_invalid(); /* notify user w/ voice prompt if voice file invalid */
     settings_apply_skins();

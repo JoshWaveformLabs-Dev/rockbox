@@ -541,7 +541,6 @@ enum wf_lib_state wf_lib_mount(const char *path) {
     if (ret != WF_LIB_STATE_MOUNTED) {
         g_lib.mounted_path[0] = '\0';
     }
-
 out:
     mutex_unlock(&g_lib_mutex);
     return ret;
