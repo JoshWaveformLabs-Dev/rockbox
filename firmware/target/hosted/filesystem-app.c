@@ -133,10 +133,13 @@ void paths_init(void)
 
     const char *home = getenv("RBROOT");
     if (!home)
-    {
         home = getenv("HOME");
-    }
-
+#ifdef __MINGW32__
+    /* Windows: HOME not set when launched from Explorer/VS Code/cmd.
+     * Fall back to USERPROFILE which Windows always provides. */
+    if (!home)
+        home = getenv("USERPROFILE");
+#endif
     if (!home)
     {
         logf("HOME environment var not set. Can't write config");
