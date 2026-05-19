@@ -17029,3 +17029,17 @@
     general_purpose_led: "Use LED indicators"
   </voice>
 </phrase>
+<phrase>
+  id: LANG_MUSIC_LIBRARY
+  desc: Music Library main-menu item (Waveform WFLIB browser)
+  user: core
+  <source>
+    *: "Music Library"
+  </source>
+  <dest>
+    *: "Music Library"
+  </dest>
+  <voice>
+    *: "Music Library"
+  </voice>
+</phrase>

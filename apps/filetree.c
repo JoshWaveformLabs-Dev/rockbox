@@ -45,6 +45,9 @@
 #include "misc.h"
 #include "strnatcmp.h"
 #include "keyboard.h"
+#ifdef WAVEFORM_WFLIB
+#include "wf_browser.h"
+#endif
 
 #ifdef HAVE_MULTIVOLUME
 #include "mv.h"
@@ -312,6 +315,11 @@ int ft_load(struct tree_context* c, const char* tempdir)
     if (!c->is_browsing)
         c->browse = NULL;
 
+#ifdef WAVEFORM_WFLIB
+    if (!tempdir && wf_browser_is_virtual_path(c->currdir))
+        return wf_browser_load(c);
+#endif
+
     if (tempdir)
         dir = opendir(tempdir);
     else
@@ -568,6 +576,11 @@ int ft_enter(struct tree_context* c)
         splashf(HZ, ID2P(LANG_READ_FAILED), str(LANG_UNKNOWN));
         return rc;
     }
+
+#ifdef WAVEFORM_WFLIB
+    if (wf_browser_is_virtual_path(c->currdir))
+        return wf_browser_enter(c);
+#endif
 
     int file_attr = file->attr;
     ft_assemble_path(buf, sizeof(buf), c->currdir, file->name);

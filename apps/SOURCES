@@ -64,6 +64,9 @@ tagtree.c
 tagcache_stubs.c
 #endif
 filetree.c
+#ifdef WAVEFORM_WFLIB
+wf_browser.c
+#endif
 #ifdef IPOD_ACCESSORY_PROTOCOL
 iap/iap-core.c
 iap/iap-lingo0.c

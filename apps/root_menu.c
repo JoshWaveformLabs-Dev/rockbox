@@ -73,6 +73,10 @@
 #include "language.h"
 #include "plugin.h"
 #include "disk.h"
+#ifdef WAVEFORM_WFLIB
+#include "wf_browser.h"
+#include "wf_lib_reader.h"
+#endif
 
 struct root_items {
     int (*function)(void* param);
@@ -276,6 +280,13 @@ static int browser(void* param)
             push_current_activity(ACTIVITY_DATABASEBROWSER);
         break;
 #endif /*HAVE_TAGCACHE*/
+#ifdef WAVEFORM_WFLIB
+        case GO_TO_MUSICLIBRARY:
+            filter = SHOW_SUPPORTED;
+            strcpy(folder, "/.wflib/");
+            push_current_activity(ACTIVITY_FILEBROWSER);
+        break;
+#endif
     }
 
     struct browse_context browse = {
@@ -492,6 +503,9 @@ static const struct root_items items[] = {
     [GO_TO_PLAYLIST_VIEWER] = { playlist_view, NULL, &playlist_options },
     [GO_TO_SYSTEM_SCREEN] = { miscscrn, &info_menu, &system_menu },
     [GO_TO_SHORTCUTMENU] = { do_shortcut_menu, NULL, NULL },
+#ifdef WAVEFORM_WFLIB
+    [GO_TO_MUSICLIBRARY] =  { browser, (void*)GO_TO_MUSICLIBRARY, NULL },
+#endif
 
 };
 //static const int nb_items = sizeof(items)/sizeof(*items);
@@ -541,6 +555,10 @@ MENUITEM_RETURNVALUE(playlists, ID2P(LANG_PLAYLISTS), GO_TO_PLAYLISTS_SCREEN,
                      NULL, Icon_Playlist);
 MENUITEM_RETURNVALUE(system_menu_, ID2P(LANG_SYSTEM), GO_TO_SYSTEM_SCREEN,
                      NULL, Icon_System_menu);
+#ifdef WAVEFORM_WFLIB
+MENUITEM_RETURNVALUE(music_library, ID2P(LANG_MUSIC_LIBRARY),
+                     GO_TO_MUSICLIBRARY, item_callback, Icon_Audio);
+#endif
 
 struct menu_item_ex root_menu_;
 static struct menu_callback_with_desc root_menu_desc = {
@@ -552,6 +570,9 @@ static struct menu_table menu_table[] = {
     { "files", &file_browser },
 #ifdef HAVE_TAGCACHE
     { "database", &db_browser },
+#endif
+#ifdef WAVEFORM_WFLIB
+    { "music_library", &music_library },
 #endif
     { "wps", &wps_item },
     { "settings", &menu_ },
@@ -688,6 +709,13 @@ static int item_callback(int action,
                 if (global_settings.usemrb == 0)
                     return ACTION_EXIT_MENUITEM;
             }
+#ifdef WAVEFORM_WFLIB
+            else if (this_item == &music_library)
+            {
+                if (wf_lib_state() != WF_LIB_STATE_MOUNTED)
+                    return ACTION_EXIT_MENUITEM;
+            }
+#endif
         break;
     }
     return action;
