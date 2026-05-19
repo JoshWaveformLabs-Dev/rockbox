@@ -61,6 +61,7 @@
 /* The number of bytes reserved for loadable plugins */
 #define PLUGIN_BUFFER_SIZE 0x80000
 #undef HAVE_ROCKBOX_PLUGINS   /* Waveform m1: all plugins stripped */
+#define HAVE_TEST_PLUGINS     /* D5: engineering test suite (keep permanently) */
 #undef HAVE_VOICE_THREAD      /* Waveform m2: voice/talk UI stripped */
 #undef HAVE_TAGCACHE          /* Waveform m4: tagcache/database stripped */
 #undef HAVE_RECORDING         /* Waveform m6: recording stripped */
