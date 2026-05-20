@@ -426,7 +426,7 @@ static void load_initial_clips(int fd)
         if (clipsize == 0) /* clip not included in voicefile */
             continue;
 
-        handle = buflib_alloc(&clip_ctx, clipsize);
+        handle = buflib_alloc(&clip_ctx, __func__, clipsize);
         if (handle < 0)
             break;
 
@@ -462,7 +462,7 @@ static int get_clip(long id, struct queue_entry *q)
         ssize_t ret;
         cache_misses++;
         /* free clips from cache until this one succeeds to allocate */
-        while ((handle = buflib_alloc(&clip_ctx, clipsize)) < 0)
+        while ((handle = buflib_alloc(&clip_ctx, __func__, clipsize)) < 0)
             oldest = free_oldest_clip();
         /* handle should now hold a valid alloc. Load from disk
          * and insert into cache */
@@ -637,7 +637,7 @@ static bool load_voicefile_data(int fd)
 
     /* the first alloc is the clip metadata table */
     metadata_alloc_size = max_clips * sizeof(struct clip_cache_metadata);
-    metadata_table_handle = buflib_alloc(&clip_ctx, metadata_alloc_size);
+    metadata_table_handle = buflib_alloc(&clip_ctx, __func__, metadata_alloc_size);
     if (metadata_table_handle <= 0)
     {
         talk_status = TALK_STATUS_ERR_OOM;
@@ -1132,7 +1132,7 @@ static int _talk_file(const char* filename,
     if (size > 0)
     {
         /* free clips from cache until this one succeeds to allocate */
-        while ((handle = buflib_alloc(&clip_ctx, size)) < 0)
+        while ((handle = buflib_alloc(&clip_ctx, __func__, size)) < 0)
             oldest = free_oldest_clip();
 
         size = read_to_handle_ex(fd, &clip_ctx, handle, 0, size);
@@ -1683,7 +1683,7 @@ void talk_announce_voice_invalid(void)
         if (!create_clip_buffer(ALIGN_UP(voice_sz, sizeof(long)) + (2<<10)))
             goto out;
         mutex_lock(&read_buffer_mutex);
-        buf_handle = buflib_alloc(&clip_ctx, ALIGN_UP(voice_sz, sizeof(long)));
+        buf_handle = buflib_alloc(&clip_ctx, __func__, ALIGN_UP(voice_sz, sizeof(long)));
 
         if (buf_handle < 0)
             goto out;

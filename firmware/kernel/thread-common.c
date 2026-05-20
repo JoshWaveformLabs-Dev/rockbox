@@ -222,6 +222,27 @@ void yield(void)
 }
 
 
+/* Waveform S4-D1: public slot/name accessors for the telemetry layer.
+ * Both are leaf reads — no locks taken, safe to call from IRQ-disabled
+ * context. thread_self_slot() yields the encoded thread_id masked to the
+ * low byte (matches THREAD_ID_SLOT). thread_name_by_slot() walks the
+ * __threads[] table; the slot may be currently unallocated, in which case
+ * __thread_slot_entry returns whatever was last stored — we accept that
+ * read race because the worst outcome is a stale name in a debug trace. */
+unsigned int thread_self_slot(void)
+{
+    return THREAD_ID_SLOT(thread_self());
+}
+
+const char *thread_name_by_slot(unsigned int slot)
+{
+    if (slot >= MAXTHREADS)
+        return NULL;
+    struct thread_entry *te = __thread_slot_entry(slot);
+    return te ? te->name : NULL;
+}
+
+
 /** Debug screen stuff **/
 
 void format_thread_name(char *buf, size_t bufsize,

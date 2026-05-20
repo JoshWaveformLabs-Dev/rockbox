@@ -73,6 +73,9 @@ metadata/flac.c
 metadata/mp4.c
 metadata/ogg.c
 metadata/aac.c
+/* vorbis.c provides read_vorbis_tags() (used by flac.c/ogg.c containers)
+ * plus ogg_file_read/base64_decode (used by jpeg_load.c for embedded art) */
+metadata/vorbis.c
 #ifdef HAVE_RECORDING
 metadata/aiff.c
 metadata/wave.c

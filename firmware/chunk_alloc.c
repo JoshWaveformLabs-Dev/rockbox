@@ -75,7 +75,7 @@ bool chunk_realloc(struct chunk_alloc_header *hdr,
 
     if (max_chunks > hdr->count) /* need room for more chunks */
     {
-        new_handle = buflib_alloc(ctx, CHUNK_ARRSZ(max_chunks));
+        new_handle = buflib_alloc(ctx, __func__, CHUNK_ARRSZ(max_chunks));
 
         if (new_handle <= 0)
         {
@@ -220,7 +220,7 @@ size_t chunk_alloc(struct chunk_alloc_header *hdr, size_t size)
         {
             size_t new_alloc_size = MAX(size, hdr->chunk_size);
 
-            chunk[idx].handle = buflib_alloc(ctx, new_alloc_size);
+            chunk[idx].handle = buflib_alloc(ctx, __func__, new_alloc_size);
 
             if (chunk[idx].handle <= 0)
             {

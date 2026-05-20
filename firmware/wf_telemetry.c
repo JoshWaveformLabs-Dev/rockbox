@@ -26,6 +26,7 @@
 #include "wf_telemetry.h"
 #include "system.h"     /* disable_irq_save / restore_irq */
 #include "kernel.h"     /* current_tick */
+#include "thread.h"     /* thread_self_slot / thread_name_by_slot */
 #ifdef WAVEFORM_TELEMETRY_BUFLIB
 #include "core_alloc.h" /* core_available / core_allocatable */
 #endif
@@ -38,22 +39,63 @@ static struct wf_event wf_event_ring[WF_EVENT_RING_SIZE];
 static volatile size_t wf_event_head;   /* next write index, [0, RING_SIZE) */
 static volatile size_t wf_event_total;  /* total records ever written */
 
+/* S4-D1: lazy one-shot WF_EVT_THREAD_NAME emission. seen_thread_bits is a
+ * bitmask of slot indices we've already emitted a name event for in the
+ * current ring epoch. wf_event_reset clears it so subsequent dumps re-emit
+ * the map. Sized for MAXTHREADS slots, packed 32 per word. */
+#define WF_THREAD_BITS_WORDS ((MAXTHREADS + 31) / 32)
+static uint32_t wf_seen_thread_bits[WF_THREAD_BITS_WORDS];
+
+/* Pack the first 12 bytes of a UTF-8 name string into three little-endian
+ * 32-bit words (b, c, d). Stops at NUL or 12 bytes — the decoder reconstructs
+ * by concatenating the bytes back. Names longer than 12 chars are truncated
+ * on the wire; the truncation is deliberate (keeps the event at 28 bytes). */
+static void wf_pack_name12(const char *name, uint32_t *b, uint32_t *c, uint32_t *d)
+{
+    uint32_t out[3] = {0, 0, 0};
+    if (name) {
+        for (unsigned i = 0; i < 12 && name[i] != '\0'; i++)
+            out[i / 4] |= ((uint32_t)(uint8_t)name[i]) << ((i & 3) * 8);
+    }
+    *b = out[0]; *c = out[1]; *d = out[2];
+}
+
+/* Write one event directly into the ring at the current head. Caller MUST
+ * hold IRQ-disabled. Used to emit auxiliary events (THREAD_NAME, TAG_NAME)
+ * from inside wf_event_record without re-entering the public API and
+ * nesting IRQ-save twice. */
+static void wf_ring_write_locked(uint16_t sub, uint16_t evt, uint16_t tid,
+                                 uint32_t a, uint32_t b, uint32_t c, uint32_t d)
+{
+    size_t slot = wf_event_head;
+    struct wf_event *e = &wf_event_ring[slot];
+    e->tick = (uint32_t)current_tick;
+    e->subsystem = sub; e->event = evt;
+    e->a = a; e->b = b; e->c = c; e->d = d;
+    e->thread_id = tid; e->reserved = 0;
+    wf_event_head = (slot + 1) % WF_EVENT_RING_SIZE;
+    wf_event_total++;
+}
+
 void wf_event_record(uint16_t sub, uint16_t evt,
                      uint32_t a, uint32_t b, uint32_t c, uint32_t d)
 {
     int irq = disable_irq_save();
-    size_t slot = wf_event_head;
-    struct wf_event *e = &wf_event_ring[slot];
-    e->tick = (uint32_t)current_tick;
-    e->subsystem = sub;
-    e->event = evt;
-    e->a = a;
-    e->b = b;
-    e->c = c;
-    e->d = d;
-    e->reserved = 0;
-    wf_event_head = (slot + 1) % WF_EVENT_RING_SIZE;
-    wf_event_total++;
+    unsigned int slot = thread_self_slot();
+    uint16_t tid = (slot < MAXTHREADS) ? (uint16_t)slot : 0;
+    if (slot < MAXTHREADS) {
+        uint32_t mask = 1u << (slot & 31);
+        uint32_t *word = &wf_seen_thread_bits[slot >> 5];
+        if (!(*word & mask)) {
+            *word |= mask;
+            const char *name = thread_name_by_slot(slot);
+            uint32_t nb, nc, nd;
+            wf_pack_name12(name, &nb, &nc, &nd);
+            wf_ring_write_locked(WF_SUB_THREAD, WF_EVT_THREAD_NAME,
+                                 tid, (uint32_t)slot, nb, nc, nd);
+        }
+    }
+    wf_ring_write_locked(sub, evt, tid, a, b, c, d);
     restore_irq(irq);
 }
 
@@ -66,12 +108,22 @@ const struct wf_event *wf_event_snapshot(size_t *count_out, size_t *head_out)
     return wf_event_ring;
 }
 
+#ifdef WAVEFORM_TELEMETRY_BUFLIB
+/* Forward — defined inside the BUFLIB block below. Cleared on event reset
+ * so a subsequent dump re-emits the hash→name map. */
+static void wf_tag_cache_reset(void);
+#endif
+
 void wf_event_reset(void)
 {
     int irq = disable_irq_save();
     memset(wf_event_ring, 0, sizeof(wf_event_ring));
+    memset(wf_seen_thread_bits, 0, sizeof(wf_seen_thread_bits));
     wf_event_head = 0;
     wf_event_total = 0;
+#ifdef WAVEFORM_TELEMETRY_BUFLIB
+    wf_tag_cache_reset();
+#endif
     restore_irq(irq);
 }
 
@@ -89,6 +141,53 @@ static struct wf_buflib_counters wf_buflib_state = {
     .min_largest_contig = UINT32_MAX,
 };
 
+/* S4-D1: one-shot tag→name emission cache. We FNV-1a-hash the caller's
+ * __func__ string at every note_alloc, then check a 64-slot linear-probe
+ * table to see if we've emitted a TAG_NAME event for this hash yet in the
+ * current ring epoch. First sight ⇒ emit; subsequent ⇒ silent.
+ * SLOT count is a power of two so the probe step uses a mask. 0 is the
+ * empty sentinel — if the FNV-1a output is 0 (vanishingly rare) we bias it
+ * to 1, which collides only with the literal hash of a string that produces
+ * 1 (also vanishingly rare). Cache exhausts gracefully: a full table
+ * suppresses TAG_NAME emission for the overflowing tag (the BUFLIB_ALLOC
+ * still ships, just with an unresolved hash on the decoder side). */
+#define WF_TAG_CACHE_SLOTS 64
+static uint32_t wf_tag_cache_hash[WF_TAG_CACHE_SLOTS];
+
+static inline uint32_t wf_fnv1a32(const char *s)
+{
+    uint32_t h = 2166136261u;       /* FNV offset basis */
+    if (s) {
+        while (*s) {
+            h ^= (uint8_t)*s++;
+            h *= 16777619u;          /* FNV prime */
+        }
+    }
+    return h;
+}
+
+/* Caller holds IRQ-disabled. Returns true on the FIRST sight of `hash` in
+ * this ring epoch (caller should then emit a WF_EVT_BUFLIB_TAG_NAME). */
+static bool wf_tag_cache_observe_locked(uint32_t hash)
+{
+    if (hash == 0) hash = 1;        /* never store 0 (reserved as empty) */
+    for (unsigned i = 0; i < WF_TAG_CACHE_SLOTS; i++) {
+        unsigned slot = (hash + i) & (WF_TAG_CACHE_SLOTS - 1);
+        if (wf_tag_cache_hash[slot] == 0) {
+            wf_tag_cache_hash[slot] = hash;
+            return true;
+        }
+        if (wf_tag_cache_hash[slot] == hash)
+            return false;
+    }
+    return false;                    /* table full — drop the emit */
+}
+
+static void wf_tag_cache_reset(void)
+{
+    memset(wf_tag_cache_hash, 0, sizeof(wf_tag_cache_hash));
+}
+
 /* Internal: update the largest-contig floor when we have a fresh sample.
  * Caller holds IRQ-disabled critical section (or guarantees no concurrent
  * sample). The hot-path alloc/free helpers do NOT call this — only the
@@ -105,9 +204,11 @@ static void wf_buflib_update_floor_locked(uint32_t total_free, uint32_t largest_
     }
 }
 
-void wf_buflib_note_alloc(size_t size)
+void wf_buflib_note_alloc(const char *tag, size_t size)
 {
+    uint32_t hash = wf_fnv1a32(tag);
     uint32_t cached_free;
+    bool first_sight;
     int irq = disable_irq_save();
     wf_buflib_state.alloc_count++;
     /* Arithmetic update — saturating subtract guards against stale cache. */
@@ -116,9 +217,17 @@ void wf_buflib_note_alloc(size_t size)
     else
         wf_buflib_state.last_total_free = 0;
     cached_free = wf_buflib_state.last_total_free;
+    first_sight = wf_tag_cache_observe_locked(hash);
     restore_irq(irq);
+
+    if (first_sight) {
+        uint32_t nb, nc, nd;
+        wf_pack_name12(tag, &nb, &nc, &nd);
+        wf_event_record(WF_SUB_BUFLIB, WF_EVT_BUFLIB_TAG_NAME,
+                        hash, nb, nc, nd);
+    }
     wf_event_record(WF_SUB_BUFLIB, WF_EVT_BUFLIB_ALLOC,
-                    (uint32_t)size, cached_free, 0, 0);
+                    (uint32_t)size, cached_free, hash, 0);
 }
 
 void wf_buflib_note_free(size_t freed)

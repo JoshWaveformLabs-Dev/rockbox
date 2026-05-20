@@ -8,12 +8,28 @@
 #include "chunk_alloc.h"
 
 /* All functions below are wrappers for functions in buflib.h, except
- * they have a predefined context
- */
+ * they have a predefined context.
+ *
+ * S4-D1 (2026-05-20): the three alloc entry points pick up a const char *tag
+ * via a macro overlay that auto-injects __func__ at the caller's scope. The
+ * underlying entry points are the *_tagged() variants; existing call sites
+ * (~65 across firmware/ and apps/) keep their original arity because the
+ * macros expand transparently. To call the tagged form directly (or to
+ * suppress the macro from inside the implementation TU), define
+ * CORE_ALLOC_NO_MACRO_TAG before including this header. */
 void core_allocator_init(void) INIT_ATTR;
-int core_alloc(size_t size);
-int core_alloc_ex(size_t size, struct buflib_callbacks *ops);
-int core_alloc_maximum(size_t *size, struct buflib_callbacks *ops);
+int core_alloc_tagged(const char *tag, size_t size);
+int core_alloc_ex_tagged(const char *tag, size_t size,
+                         struct buflib_callbacks *ops);
+int core_alloc_maximum_tagged(const char *tag, size_t *size,
+                              struct buflib_callbacks *ops);
+
+#ifndef CORE_ALLOC_NO_MACRO_TAG
+#define core_alloc(size)              core_alloc_tagged(__func__, (size))
+#define core_alloc_ex(size, ops)      core_alloc_ex_tagged(__func__, (size), (ops))
+#define core_alloc_maximum(sptr, ops) core_alloc_maximum_tagged(__func__, (sptr), (ops))
+#endif
+
 bool core_shrink(int handle, void* new_start, size_t new_size);
 void core_pin(int handle);
 void core_unpin(int handle);

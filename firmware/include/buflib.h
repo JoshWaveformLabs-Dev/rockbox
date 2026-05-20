@@ -185,7 +185,7 @@ bool buflib_context_relocate(struct buflib_context *ctx, void *buf);
  * this function. However, this may change, and you should treat a zero
  * or negative return value as an allocation failure.
  */
-int buflib_alloc(struct buflib_context *ctx, size_t size);
+int buflib_alloc(struct buflib_context *ctx, const char *tag, size_t size);
 
 /**
  * \brief Allocate memory from buflib with custom buffer ops
@@ -202,7 +202,7 @@ int buflib_alloc(struct buflib_context *ctx, size_t size);
  * this function. However, this may change, and you should treat a zero
  * or negative return value as an allocation failure.
  */
-int buflib_alloc_ex(struct buflib_context *ctx, size_t size,
+int buflib_alloc_ex(struct buflib_context *ctx, const char *tag, size_t size,
                     struct buflib_callbacks *ops);
 
 /**
@@ -222,7 +222,7 @@ int buflib_alloc_ex(struct buflib_context *ctx, size_t size,
  *       change your code if you think you need this. Of course, if you are
  *       using a private buflib context then this warning does not apply.
  */
-int buflib_alloc_maximum(struct buflib_context *ctx,
+int buflib_alloc_maximum(struct buflib_context *ctx, const char *tag,
                          size_t *size, struct buflib_callbacks *ops);
 
 /**

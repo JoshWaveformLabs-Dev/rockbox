@@ -172,6 +172,14 @@ unsigned int switch_core(unsigned int new_core);
 /* Return the id of the calling thread. */
 unsigned int thread_self(void);
 
+/* Telemetry-side accessors (Waveform S4-D1). Both are leaf reads — safe to
+ * call from IRQ-disabled context. thread_self_slot() returns the slot index
+ * of the calling thread (< MAXTHREADS). thread_name_by_slot() returns the
+ * stored name pointer for a slot, or NULL if the slot is out of range or
+ * has no name attached. Avoids leaking thread-internal.h to telemetry. */
+unsigned int thread_self_slot(void);
+const char *thread_name_by_slot(unsigned int slot);
+
 /* Debugging info - only! */
 #if NUM_CORES > 1
 struct core_debug_info

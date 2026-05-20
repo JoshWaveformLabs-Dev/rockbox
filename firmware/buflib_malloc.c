@@ -97,14 +97,15 @@ bool buflib_context_relocate(struct buflib_context *ctx, void *buf)
     return true;
 }
 
-int buflib_alloc(struct buflib_context *ctx, size_t size)
+int buflib_alloc(struct buflib_context *ctx, const char *tag, size_t size)
 {
-    return buflib_alloc_ex(ctx, size, NULL);
+    return buflib_alloc_ex(ctx, tag, size, NULL);
 }
 
-int buflib_alloc_ex(struct buflib_context *ctx, size_t size,
+int buflib_alloc_ex(struct buflib_context *ctx, const char *tag, size_t size,
                     struct buflib_callbacks *ops)
 {
+    (void)tag;  /* malloc backend has no telemetry hook yet */
     struct buflib_malloc_handle *handle = get_free_handle(ctx);
 
     handle->data = malloc(size);
@@ -119,12 +120,12 @@ int buflib_alloc_ex(struct buflib_context *ctx, size_t size,
     return get_handle_num(ctx, handle);
 }
 
-int buflib_alloc_maximum(struct buflib_context* ctx,
+int buflib_alloc_maximum(struct buflib_context* ctx, const char *tag,
                          size_t *size, struct buflib_callbacks *ops)
 {
     *size = ctx->bufsize;
 
-    return buflib_alloc_ex(ctx, *size, ops);
+    return buflib_alloc_ex(ctx, tag, *size, ops);
 }
 
 bool buflib_shrink(struct buflib_context *ctx, int handle,

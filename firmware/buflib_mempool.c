@@ -570,9 +570,9 @@ buflib_buffer_in(struct buflib_context *ctx, int size)
  * Note: Buffers are movable since NULL is passed for "ops".
          Don't pass them to functions that call yield() */
 int
-buflib_alloc(struct buflib_context *ctx, size_t size)
+buflib_alloc(struct buflib_context *ctx, const char *tag, size_t size)
 {
-    return buflib_alloc_ex(ctx, size, NULL);
+    return buflib_alloc_ex(ctx, tag, size, NULL);
 }
 
 /* Allocate a buffer of size bytes, returning a handle for it.
@@ -586,7 +586,7 @@ buflib_alloc(struct buflib_context *ctx, size_t size)
  */
 
 int
-buflib_alloc_ex(struct buflib_context *ctx, size_t size,
+buflib_alloc_ex(struct buflib_context *ctx, const char *tag, size_t size,
                 struct buflib_callbacks *ops)
 {
     union buflib_data *handle, *block;
@@ -696,7 +696,7 @@ buffer_alloc:
     /* size is in buflib_data units here; convert to bytes for the counter.
      * last_total_free is maintained arithmetically inside the hook — we
      * deliberately do NOT call buflib_available(ctx) on the hot path. */
-    wf_buflib_note_alloc(size * sizeof(union buflib_data));
+    wf_buflib_note_alloc(tag, size * sizeof(union buflib_data));
 #endif
     /* Return the handle index as a positive integer. */
     return ctx->handle_table - handle;
@@ -889,7 +889,7 @@ buflib_available(struct buflib_context* ctx)
  * serviced anyway).
  */
 int
-buflib_alloc_maximum(struct buflib_context* ctx, size_t *size, struct buflib_callbacks *ops)
+buflib_alloc_maximum(struct buflib_context* ctx, const char *tag, size_t *size, struct buflib_callbacks *ops)
 {
     /* ignore ctx->compact because it's true if all movable blocks are contiguous
      * even if the buffer has holes due to unmovable allocations */
@@ -906,7 +906,7 @@ buflib_alloc_maximum(struct buflib_context* ctx, size_t *size, struct buflib_cal
     if (*size <= 0) /* OOM */
         return -1;
 
-    return buflib_alloc_ex(ctx, *size, ops);
+    return buflib_alloc_ex(ctx, tag, *size, ops);
 }
 
 /* Shrink the allocation indicated by the handle according to new_start and

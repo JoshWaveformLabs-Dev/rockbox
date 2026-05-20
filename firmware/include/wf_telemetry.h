@@ -41,6 +41,8 @@ enum {
     WF_SUB_CODEC    = 3,
     WF_SUB_STORAGE  = 4,
     WF_SUB_STACK    = 5,
+    WF_SUB_MEMORY   = 6,  /* reserved for host-only alloc shim; firmware adoption deferred */
+    WF_SUB_THREAD   = 7,  /* one-shot thread_id -> name map events */
     WF_SUB__COUNT
 };
 
@@ -54,6 +56,7 @@ enum {
     WF_EVT_BUFLIB_PIN       = 0x0104,
     WF_EVT_BUFLIB_UNPIN     = 0x0105,
     WF_EVT_BUFLIB_FRAG_LOW  = 0x0106, /* largest-contig dipped below prior min */
+    WF_EVT_BUFLIB_TAG_NAME  = 0x0107, /* one-shot: hash -> string for offline decode */
 
     WF_EVT_PCMBUF_LOW_ENTER = 0x0200,
     WF_EVT_PCMBUF_LOW_EXIT  = 0x0201,
@@ -70,17 +73,24 @@ enum {
     WF_EVT_STORAGE_WAKE        = 0x0404,
 
     WF_EVT_STACK_OVERRUN = 0x0500,
-    WF_EVT_STACK_LOW     = 0x0501  /* min-remaining dropped below prior floor */
+    WF_EVT_STACK_LOW     = 0x0501, /* min-remaining dropped below prior floor */
+
+    WF_EVT_THREAD_NAME   = 0x0700  /* one-shot: thread_id -> name for offline decode */
 };
 
-/* 32-byte event record. The fields are deliberately untyped past (sub,evt) —
- * subsystem decides what a/b/c/d mean. Decode is offline (scripts/wf-trace-decode.py). */
+/* 28-byte event record. The fields are deliberately untyped past (sub,evt) —
+ * subsystem decides what a/b/c/d mean. Decode is offline (scripts/wf-trace-decode.py).
+ *
+ * S4-D1 (2026-05-20): thread_id carved from the former uint32_t reserved field.
+ * Holds THREAD_ID_SLOT(thread_self()) — a slot index in [0, MAXTHREADS).
+ * Wire size unchanged at 28 bytes; _Static_assert in wf_telemetry.c locks it. */
 struct wf_event {
     uint32_t tick;       /* current_tick at record time */
     uint16_t subsystem;  /* WF_SUB_* */
     uint16_t event;      /* WF_EVT_* */
     uint32_t a, b, c, d; /* subsystem-defined payload */
-    uint32_t reserved;   /* pad to 32 bytes; ignored on decode */
+    uint16_t thread_id;  /* THREAD_ID_SLOT() of recording thread; 0 if pre-thread */
+    uint16_t reserved;   /* keep for future use; ignored on decode */
 };
 
 #ifndef WF_EVENT_RING_SIZE
@@ -142,7 +152,7 @@ uint32_t wf_buflib_frag_ratio_x10000(void);
  * and largest_contig happens only in note_compact_done (buffer is naturally
  * contiguous so the walks are effectively free) and in wf_buflib_sample_now
  * (debug menu, user-initiated). */
-void wf_buflib_note_alloc(size_t size);
+void wf_buflib_note_alloc(const char *tag, size_t size);
 void wf_buflib_note_free(size_t freed);
 void wf_buflib_note_move(int handle, const void *from, const void *to);
 void wf_buflib_note_compact_begin(void);

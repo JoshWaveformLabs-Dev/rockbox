@@ -2650,7 +2650,7 @@ static int read_pfraw(char* filename, int prio)
 
     int hid;
     do {
-        hid = rb->buflib_alloc(&buf_ctx, size);
+        hid = rb->buflib_alloc(&buf_ctx, __func__, size);
     } while (hid < 0 && free_slide_prio(prio));
 
     if (hid < 0) {

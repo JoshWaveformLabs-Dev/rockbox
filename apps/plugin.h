@@ -711,10 +711,10 @@ struct plugin_api {
     /* the buflib memory management library */
     void   (*buflib_init)(struct buflib_context* ctx, void* buf, size_t size);
     size_t (*buflib_available)(struct buflib_context* ctx);
-    int    (*buflib_alloc)(struct buflib_context* ctx, size_t size);
-    int    (*buflib_alloc_ex)(struct buflib_context* ctx, size_t size,
-                              struct buflib_callbacks *ops);
-    int    (*buflib_alloc_maximum)(struct buflib_context* ctx,
+    int    (*buflib_alloc)(struct buflib_context* ctx, const char *tag, size_t size);
+    int    (*buflib_alloc_ex)(struct buflib_context* ctx, const char *tag,
+                              size_t size, struct buflib_callbacks *ops);
+    int    (*buflib_alloc_maximum)(struct buflib_context* ctx, const char *tag,
                                    size_t* size, struct buflib_callbacks *ops);
     void   (*buflib_buffer_in)(struct buflib_context* ctx, int size);
     void*  (*buflib_buffer_out)(struct buflib_context* ctx, size_t* size);

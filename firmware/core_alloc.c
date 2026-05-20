@@ -2,6 +2,10 @@
 #include "config.h"
 #include <string.h>
 #include "system.h"
+/* Suppress the core_alloc* macro overlay inside the implementation TU —
+ * the function definitions below ARE the _tagged entry points, and we
+ * don't want the macro to rewrite their bodies. */
+#define CORE_ALLOC_NO_MACRO_TAG 1
 #include "core_alloc.h"
 #include "buflib.h"
 
@@ -54,7 +58,7 @@ void core_allocator_init(void)
     buflib_init(&core_ctx, start, audiobufend - start);
 
 #ifdef BUFLIB_DEBUG_PRINT
-    test_alloc = core_alloc(112);
+    test_alloc = core_alloc_tagged(__func__, 112);
 #endif
 }
 
@@ -64,14 +68,15 @@ void core_allocator_init(void)
  * Note: Buffers allocated by this functions are movable.
  *       Don't pass them to functions that call yield()
  *       like disc input/output. */
-int core_alloc(size_t size)
+int core_alloc_tagged(const char *tag, size_t size)
 {
-    return buflib_alloc_ex(&core_ctx, size, NULL);
+    return buflib_alloc_ex(&core_ctx, tag, size, NULL);
 }
 
-int core_alloc_ex(size_t size, struct buflib_callbacks *ops)
+int core_alloc_ex_tagged(const char *tag, size_t size,
+                         struct buflib_callbacks *ops)
 {
-    return buflib_alloc_ex(&core_ctx, size, ops);
+    return buflib_alloc_ex(&core_ctx, tag, size, ops);
 }
 
 size_t core_available(void)
@@ -89,9 +94,10 @@ int core_free(int handle)
     return buflib_free(&core_ctx, handle);
 }
 
-int core_alloc_maximum(size_t *size, struct buflib_callbacks *ops)
+int core_alloc_maximum_tagged(const char *tag, size_t *size,
+                              struct buflib_callbacks *ops)
 {
-    return buflib_alloc_maximum(&core_ctx, size, ops);
+    return buflib_alloc_maximum(&core_ctx, tag, size, ops);
 }
 
 bool core_shrink(int handle, void* new_start, size_t new_size)
