@@ -2991,6 +2991,29 @@ static bool dbg_wf_storage(void)
 }
 #endif /* WAVEFORM_TELEMETRY_STORAGE */
 
+/* S4-D2: dump the raw wf_event ring to a .bin file for offline decode
+ * with scripts/wf-trace-decode.py. The full WF_EVENT_RING_SIZE worth
+ * of bytes is written; the splashf line reports count + head so the
+ * user can reason about wrap state (count >= WF_EVENT_RING_SIZE means
+ * the ring wrapped and head identifies the oldest record). Under SDL
+ * APPLICATION the /.rockbox/ prefix maps to $HOME/.config/rockbox.org/. */
+static bool dbg_wf_ring_dump(void)
+{
+    size_t count = 0, head = 0;
+    const struct wf_event *ring = wf_event_snapshot(&count, &head);
+    int fd = creat(ROCKBOX_DIR "/wf_ring_dump.bin", 0666);
+    if (fd < 0)
+    {
+        splashf(HZ * 3, "ring dump: open failed");
+        return false;
+    }
+    write(fd, ring, sizeof(struct wf_event) * WF_EVENT_RING_SIZE);
+    close(fd);
+    splashf(HZ * 3, "ring: %lu evts head %lu",
+            (unsigned long)count, (unsigned long)head);
+    return false;
+}
+
 #endif /* WAVEFORM_TELEMETRY */
 
 #ifdef WAVEFORM_WFLIB
@@ -3202,6 +3225,7 @@ static const struct {
 #ifdef WAVEFORM_TELEMETRY_STORAGE
         {"WF: Storage", dbg_wf_storage },
 #endif
+        {"WF: Ring dump", dbg_wf_ring_dump },
 #endif /* WAVEFORM_TELEMETRY */
 #ifdef WAVEFORM_WFLIB
         {"WF: Library", dbg_wf_lib    },
