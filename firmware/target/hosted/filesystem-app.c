@@ -135,10 +135,16 @@ void paths_init(void)
     if (!home)
         home = getenv("HOME");
 #ifdef __MINGW32__
-    /* Windows: HOME not set when launched from Explorer/VS Code/cmd.
-     * Fall back to USERPROFILE which Windows always provides. */
-    if (!home)
-        home = getenv("USERPROFILE");
+    /* On Windows, HOME is often set to an MSYS2-style POSIX path
+     * (e.g. /c/Users/foo) which Win32 APIs cannot open. USERPROFILE
+     * is always a proper Windows path (C:\Users\foo).  Prefer it so
+     * that all /.rockbox/ path translations work regardless of how
+     * the binary is launched (Explorer, cmd, VS Code, or MSYS2). */
+    {
+        const char *up = getenv("USERPROFILE");
+        if (up)
+            home = up;
+    }
 #endif
     if (!home)
     {
