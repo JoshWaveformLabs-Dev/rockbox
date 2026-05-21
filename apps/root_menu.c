@@ -747,6 +747,11 @@ static inline int load_screen(int screen)
         return screen;
     if (screen == old_previous)
         old_previous = GO_TO_ROOT;
+
+    /* Guard against stripped items whose function pointer was never set. */
+    if ((size_t)screen >= ARRAYLEN(items) || !items[screen].function)
+        return GO_TO_ROOT;
+
     global_status.last_screen = (char)screen;
     status_save(false);
 

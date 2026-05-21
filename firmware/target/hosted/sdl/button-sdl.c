@@ -99,6 +99,39 @@ extern bool debug_wps;
 extern bool mapping;
 
 #ifdef HAVE_TOUCHSCREEN
+#ifdef APPLICATION
+/* In the APPLICATION build, mouse events can complete in under 10 ms (one
+ * button_tick period), so press+release both vanish before the tick samples
+ * btn.  Post directly to the button queue instead, which the action system
+ * drains independently of the tick.  Scrollwheel already uses the same
+ * pattern. */
+static bool ts_active = false;
+
+static void touchscreen_event(int x, int y)
+{
+    if (background) {
+        x -= UI_LCD_POSX;
+        y -= UI_LCD_POSY;
+    }
+    if (x >= 0 && y >= 0 && x < SIM_LCD_WIDTH && y < SIM_LCD_HEIGHT) {
+        mouse_coords = (x << 16) | y;
+        int ev = ts_active ? (BUTTON_TOUCHSCREEN | BUTTON_REPEAT)
+                           : BUTTON_TOUCHSCREEN;
+        button_queue_try_post(ev, mouse_coords);
+        ts_active = true;
+    }
+}
+
+static void touchscreen_release(void)
+{
+    if (ts_active) {
+        button_queue_try_post(BUTTON_TOUCHSCREEN | BUTTON_REL, mouse_coords);
+        ts_active = false;
+    }
+}
+
+#else /* !APPLICATION */
+
 static void touchscreen_event(int x, int y)
 {
     if(background) {
@@ -113,7 +146,14 @@ static void touchscreen_event(int x, int y)
             printf("Mouse at 1: (%d, %d)\n", x, y);
     }
 }
-#endif
+
+static void touchscreen_release(void)
+{
+    button_event(BUTTON_TOUCHSCREEN, false);
+}
+
+#endif /* APPLICATION */
+#endif /* HAVE_TOUCHSCREEN */
 
 #if defined(HAVE_SCROLLWHEEL) || ((defined(BUTTON_SCROLL_FWD) && defined(BUTTON_SCROLL_BACK)))
 static void scrollwheel_event(int x, int y)
@@ -169,7 +209,7 @@ static void mouse_event(SDL_MouseButtonEvent *event, bool button_up)
 #endif
 #ifdef HAVE_TOUCHSCREEN
                 else
-                    button_event(BUTTON_TOUCHSCREEN, false);
+                    touchscreen_release();
 #endif
             break;
         }

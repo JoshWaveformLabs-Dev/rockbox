@@ -52,6 +52,8 @@ int key_to_button(int keyboard_key)
             new_btn = BUTTON_MIDLEFT;
             break;
         case SDLK_KP_5:
+        case SDLK_RETURN:
+        case SDLK_KP_ENTER:
             new_btn = BUTTON_CENTER;
             break;
         case SDLK_KP_6:
