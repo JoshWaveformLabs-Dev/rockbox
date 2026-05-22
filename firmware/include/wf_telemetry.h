@@ -94,9 +94,13 @@ struct wf_event {
 };
 
 #ifndef WF_EVENT_RING_SIZE
-/* 1024 entries * 32 bytes = 32 KB BSS. Drop to 256 on memory-constrained
- * targets — see plan deliverable D1 risks. */
-#define WF_EVENT_RING_SIZE 1024
+/* 16384 entries * 28 bytes = 448 KB BSS. Bumped from 1024 for S4-D2
+ * empirical hot-path audit: BUFLIB_PIN/UNPIN events saturate a 1024-slot
+ * ring within a fraction of a second of playback, evicting the
+ * CODEC_RUN_BEGIN window markers before WF: Ring dump can be triggered.
+ * Memory-constrained targets (warble / ARM) should override this in
+ * their config header to a smaller value (e.g. 256 or 1024). */
+#define WF_EVENT_RING_SIZE 16384
 #endif
 
 /* Record one event. Safe from any context including ISR (uses IRQ-save). */
