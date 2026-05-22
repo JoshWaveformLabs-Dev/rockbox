@@ -72,7 +72,9 @@
 #if (CONFIG_PLATFORM & PLATFORM_ANDROID)
 #define CODECS_DIR          ROCKBOX_BINARY_PATH
 #else
+#ifndef CODECS_DIR
 #define CODECS_DIR          ROCKBOX_LIBRARY_PATH "/rockbox/codecs"
+#endif
 #endif
 
 #define REC_BASE_DIR        HOME_DIR "/Recordings"

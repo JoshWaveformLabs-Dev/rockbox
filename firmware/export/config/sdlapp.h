@@ -111,3 +111,9 @@
 /* No special storage */
 #define CONFIG_STORAGE STORAGE_HOSTFS
 #define HAVE_STORAGE_FLUSH
+
+/* Override CODECS_DIR (default ROCKBOX_LIBRARY_PATH "/rockbox/codecs" =
+ * "/usr/local/lib/rockbox/codecs") so handle_special_dirs maps it to
+ * "$HOME/.config/rockbox.org/codecs". Required because the sim runs from
+ * its build tree, not from a system-wide install. */
+#define CODECS_DIR ROCKBOX_DIR "/codecs"

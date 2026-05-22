@@ -3001,7 +3001,20 @@ static bool dbg_wf_ring_dump(void)
 {
     size_t count = 0, head = 0;
     const struct wf_event *ring = wf_event_snapshot(&count, &head);
-    int fd = creat(ROCKBOX_DIR "/wf_ring_dump.bin", 0666);
+    const char *vpath = ROCKBOX_DIR "/wf_ring_dump.bin";
+#ifdef APPLICATION
+    extern const char * handle_special_dirs(const char *dir, unsigned flags,
+                                            char *buf, const size_t bufsize);
+    char resolved[512];
+    const char *opath = handle_special_dirs(vpath, 1 /* NEED_WRITE */,
+                                            resolved, sizeof(resolved));
+    printf("wf_ring_dump: %s -> %s\n", vpath, opath ? opath : "(resolve failed)");
+    fflush(stdout);
+#else
+    printf("wf_ring_dump: %s\n", vpath);
+    fflush(stdout);
+#endif
+    int fd = creat(vpath, 0666);
     if (fd < 0)
     {
         splashf(HZ * 3, "ring dump: open failed");
