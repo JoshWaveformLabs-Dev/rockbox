@@ -109,6 +109,8 @@ struct entry* tree_get_entry_at(struct tree_context *t, int index)
     if(index < 0 || index >= t->cache.max_entries)
         return NULL; /* no entry */
     struct entry* entries = tree_get_entries(t);
+    if (!entries)
+        return NULL; /* entries handle not backed by data */
     return &entries[index];
 }
 
@@ -1207,10 +1209,14 @@ void tree_mem_init(void)
     cache->name_buffer_size = AVERAGE_FILENAME_LENGTH *
         global_settings.max_files_in_dir;
     cache->name_buffer_handle = core_alloc_ex(cache->name_buffer_size, &ops);
+    if (cache->name_buffer_handle <= 0)
+        panicf("%s(): name_buffer OOM", __func__);
 
     cache->max_entries = global_settings.max_files_in_dir;
     cache->entries_handle =
             core_alloc_ex(cache->max_entries*(sizeof(struct entry)), &ops);
+    if (cache->entries_handle <= 0)
+        panicf("%s(): entries OOM", __func__);
 }
 
 bool bookmark_play(char *resume_file, int index, unsigned long elapsed,

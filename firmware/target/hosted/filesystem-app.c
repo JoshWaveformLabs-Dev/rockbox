@@ -446,6 +446,8 @@ struct dirent * app_readdir(DIR *dirp)
 #endif /* HAVE_MULTIDRIVE */
 
     OS_DIRENT_T *osdirent = os_readdir(this->osdirp);
+    if (!osdirent)
+        return NULL; /* end of directory or error */
 
 #ifdef OS_DIRENT_CONVERT
     if (strlcpy_from_os(this->direntp->d_name, osdirent->d_name,
