@@ -44,6 +44,9 @@
 #include "pcm-internal.h"
 #include "pcm_sampr.h"
 #include "pcm_mixer.h"
+#ifdef WAVEFORM_TELEMETRY
+#include "wf_telemetry.h"
+#endif
 
 /*#define LOGF_ENABLE*/
 #include "logf.h"
@@ -79,6 +82,15 @@ static SDL_AudioSpec obtained;
 static SDL_AudioCVT cvt;
 static int audio_locked = 0;
 static SDL_mutex *audio_lock;
+
+#ifdef WAVEFORM_TELEMETRY
+/* S4-D2: one-shot marker emitted the first time SDL pulls samples
+ * after pcm_play_dma_start. Discriminates "PCM produced but device
+ * never opened/started" from "device live but codec silent" in the
+ * Opus playback-silence investigation. Reset in pcm_play_dma_stop
+ * so every track gets its own marker. */
+static bool wf_sdl_callback_marker_pending = true;
+#endif
 
 void pcm_play_lock(void)
 {
@@ -188,6 +200,10 @@ void pcm_play_dma_stop(void)
     SDL_PauseAudio(1);
 #endif
 
+#ifdef WAVEFORM_TELEMETRY
+    wf_sdl_callback_marker_pending = true;
+#endif
+
 #ifdef DEBUG
     if (udata.debug != NULL) {
         fclose(udata.debug);
@@ -291,6 +307,22 @@ static void sdl_audio_callback(void *handle, Uint8 *stream, int len)
     struct pcm_udata *udata = handle;
 
     logf("sdl_audio_callback: len %d, pcm %zd", len, pcm_data_size);
+
+#ifdef WAVEFORM_TELEMETRY
+    /* Re-uses WF_EVT_PCMBUF_LOW_EXIT (0x0201): "pcm buffer transitioned
+     * out of starvation" is semantically equivalent to "SDL pulled
+     * samples for the first time after device start". The decoder
+     * tolerates the re-use because per-track resets mean only one
+     * such event ever lands per playback start; the broader low-state
+     * watermark telemetry (firmware/pcmbuf.c) emits the SAME event
+     * later if buffer fill actually transitions, and that's fine —
+     * the audit ignores LOW_EXIT entirely. Payload: a=pcm_sampr, b=len. */
+    if (wf_sdl_callback_marker_pending) {
+        wf_sdl_callback_marker_pending = false;
+        wf_event_record(WF_SUB_PCMBUF, WF_EVT_PCMBUF_LOW_EXIT,
+                        (uint32_t)pcm_sampr, (uint32_t)len, 0, 0);
+    }
+#endif
 
     bool new_buffer = false;
     udata->stream = stream;

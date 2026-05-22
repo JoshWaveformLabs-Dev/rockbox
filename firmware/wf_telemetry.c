@@ -279,9 +279,19 @@ void wf_buflib_sample_now(void)
     restore_irq(irq);
 }
 
+/* S4-D2: pin/unpin ring emission dropped. The audit decoder
+ * (scripts/wf-trace-decode.py::audit_aggregate, line 203) filters to
+ * BUFLIB_ALLOC (0x0100) only; PIN/UNPIN events were pure ring noise
+ * that saturated even a 16384-slot ring inside ~15 s of playback,
+ * evicting the CODEC_RUN_BEGIN/END window markers the audit needs.
+ * Counters still update — peak_pinned_handles and pin/unpin totals
+ * remain available via the buflib debug screen and counter snapshots.
+ * The 0x0104/0x0105 event IDs are reserved (kept in the enum) so any
+ * pre-S4-D2 dump still decodes. (void)handle on the call site keeps
+ * the API stable for future ring re-enable without a signature break. */
 void wf_buflib_note_pin(int handle, unsigned new_pincount)
 {
-    uint32_t cur;
+    (void)handle;
     int irq = disable_irq_save();
     wf_buflib_state.pin_count++;
     /* Transition 0→1: a previously unpinned handle just became pinned. */
@@ -291,24 +301,18 @@ void wf_buflib_note_pin(int handle, unsigned new_pincount)
         if (wf_buflib_state.cur_pinned_handles > wf_buflib_state.peak_pinned_handles)
             wf_buflib_state.peak_pinned_handles = wf_buflib_state.cur_pinned_handles;
     }
-    cur = wf_buflib_state.cur_pinned_handles;
     restore_irq(irq);
-    wf_event_record(WF_SUB_BUFLIB, WF_EVT_BUFLIB_PIN, (uint32_t)handle,
-                    cur, (uint32_t)new_pincount, 0);
 }
 
 void wf_buflib_note_unpin(int handle, unsigned new_pincount)
 {
-    uint32_t cur;
+    (void)handle;
     int irq = disable_irq_save();
     wf_buflib_state.unpin_count++;
     /* Transition 1→0: this handle no longer has any outstanding pins. */
     if (new_pincount == 0 && wf_buflib_state.cur_pinned_handles > 0)
         wf_buflib_state.cur_pinned_handles--;
-    cur = wf_buflib_state.cur_pinned_handles;
     restore_irq(irq);
-    wf_event_record(WF_SUB_BUFLIB, WF_EVT_BUFLIB_UNPIN, (uint32_t)handle,
-                    cur, (uint32_t)new_pincount, 0);
 }
 
 void wf_buflib_counters_get(struct wf_buflib_counters *out)

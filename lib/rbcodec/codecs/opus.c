@@ -477,6 +477,11 @@ enum codec_status codec_run(void)
                     ci->configure(DSP_SET_SAMPLE_DEPTH, 16);
                     ci->configure(DSP_SET_STEREO_MODE, (header->channels == 2) ?
                         STEREO_INTERLEAVED : STEREO_MONO);
+                    /* S4-D2 diag: confirm we reached the per-stream
+                     * configure path. If absent from sim stdout, codec
+                     * stalled before identification header parse. */
+                    LOGF("opus: declared sample_rate=%d ch=%d",
+                         sample_rate, header->channels);
 
                     if (strtoffset)
                         seek_ogg_page(strtoffset);
@@ -501,6 +506,10 @@ enum codec_status codec_run(void)
                     /* report progress */
                     ci->set_offset((size_t) ci->curpos);
                     ci->set_elapsed((granule_pos - header->preskip) / 48);
+                    /* S4-D2 diag: confirm granule advances (clock source). */
+                    LOGF("opus: granule=%lu elapsed=%lu",
+                         (unsigned long)granule_pos,
+                         (unsigned long)((granule_pos - header->preskip) / 48));
 
                     /* Decode audio packets */
                     ret = opus_decode(st, op.packet, op.bytes, output, MAX_FRAME_SIZE, 0);
@@ -509,6 +518,11 @@ enum codec_status codec_run(void)
                         /* part of or entire output buffer is played */
                         ret -= skip;
                         ci->pcmbuf_insert(&output[skip * header->channels], NULL, ret);
+                        /* S4-D2 diag: confirm PCM samples were handed to
+                         * the mixer. Together with the SDL callback ring
+                         * marker (pcm-sdl.c) this localises silence to
+                         * codec-stage vs transport-stage. */
+                        LOGF("opus: pcmbuf_insert ret=%d skip=%d", ret, skip);
                         skip = 0;
                     } else {
                         if (ret < 0) {

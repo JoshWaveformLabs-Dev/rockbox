@@ -37,7 +37,7 @@
 /* Define LOGF_ENABLE to enable logf output in this file */
 /*#define LOGF_ENABLE*/
 #include "logf.h"
-#ifdef WAVEFORM_TELEMETRY_CODEC
+#if defined(WAVEFORM_TELEMETRY_CODEC) || defined(WAVEFORM_TELEMETRY_STACK)
 #include "wf_telemetry.h"
 #endif
 
@@ -561,6 +561,16 @@ static void run_codec(void)
 
 #ifdef WAVEFORM_TELEMETRY_CODEC
     wf_codec_note_run_end((uint16_t)codec_type, status);
+#endif
+
+#ifdef WAVEFORM_TELEMETRY_STACK
+    /* S4-D2: per-codec post-run stack canary scan. The peak_used field
+     * on the codec thread tells us, by codec, how close we came to
+     * CODEC_STACKSIZE. Used to compare clean codecs (MP3/FLAC/ALAC/Opus)
+     * against suspected stack-overflow cases (e.g. AAC). On a real
+     * overrun this won't fire — the canary state persists for the next
+     * scan trigger (debug menu dump or periodic worker). */
+    wf_stack_scan_now();
 #endif
 
     if (!encoder)
