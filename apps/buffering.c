@@ -94,6 +94,15 @@ struct memory_handle {
     off_t   start;          /* Offset at which we started reading the file */
     off_t   pos;            /* Read position in file */
     off_t volatile end;     /* Offset at which we stopped reading the file */
+    /* S4-D4 (Finding C-3): publication pointer for the codec reader.
+     * The buffering thread writes ring bytes + h->widx + h->end first,
+     * issues a release fence (membarrier), then stores h->end into
+     * read_safe_end. The codec thread acquires read_safe_end (load +
+     * membarrier) in prep_bufdata before any ring read, so it observes
+     * bytes the writer published before the matching release.
+     * Invariant: read_safe_end <= h->end at all times. The codec must
+     * use THIS field — not h->end — to bound its ring reads. */
+    off_t volatile read_safe_end;
     char    path[];         /* Path if data originated in a file */
 };
 
@@ -247,6 +256,21 @@ static inline ssize_t ringbuf_add_cross_full(uintptr_t p1, size_t v,
         res -= buffer_len;
 
     return res;
+}
+
+/* S4-D4 (Finding C-3): publish h->end to the codec reader.
+ * Call after ALL ring data writes AND any h->widx / h->end updates the
+ * codec must see together with the new end value. The membarrier is a
+ * release fence: on uniprocessor ARM (single observer) and on x86 TSO
+ * it degenerates to a compiler-only barrier, which is sufficient on
+ * every Waveform target (audio/codec/buffering all live on CPU via
+ * IF_COP(, CPU); the SDL sim is x86 TSO). A future SMP target can
+ * override membarrier() in system-target.h to emit dmb ish without
+ * touching this call site. */
+static inline void publish_read_safe_end(struct memory_handle *h)
+{
+    membarrier();
+    h->read_safe_end = h->end;
 }
 
 /* Real buffer watermark */
@@ -657,6 +681,7 @@ static bool buffer_handle(int handle_id, size_t to_buffer)
         h->fd = -1; /* with above, behavior same as close_fd */
         h->widx = ringbuf_add(h->data, h->filesize);
         h->end  = h->filesize;
+        publish_read_safe_end(h); /* S4-D4 */
         send_event(BUFFER_EVENT_FINISHED, &handle_id);
         return true;
     }
@@ -707,6 +732,7 @@ static bool buffer_handle(int handle_id, size_t to_buffer)
         /* Advance buffer and make data available to users */
         h->widx = ringbuf_add(widx, rc);
         h->end += rc;
+        publish_read_safe_end(h); /* S4-D4 */
 
         yield();
 
@@ -935,6 +961,7 @@ int bufopen(const char *file, off_t offset, enum data_type type,
             h->start    = 0;
             h->pos      = 0;
             h->end      = 0;
+            h->read_safe_end = 0; /* S4-D4: initial publication */
 
             link_handle(h);
 
@@ -1060,6 +1087,7 @@ int bufopen(const char *file, off_t offset, enum data_type type,
         h->widx     = data;
         h->filesize = size;
         h->end      = adjusted_offset;
+        h->read_safe_end = adjusted_offset; /* S4-D4: initial publication */
         link_handle(h);
     }
 
@@ -1127,6 +1155,7 @@ int bufalloc(const void *src, size_t size, enum data_type type)
         h->start     = 0;
         h->pos       = 0;
         h->end       = size;
+        h->read_safe_end = size; /* S4-D4: initial publication */
 
         link_handle(h);
     }
@@ -1215,6 +1244,7 @@ static void rebuffer_handle(int handle_id, off_t newpos)
     /* Reset the handle to its new position */
     h->ridx = h->widx = h->data = new_index;
     h->start = h->pos = h->end = newpos;
+    publish_read_safe_end(h); /* S4-D4: re-publish low end after reset */
 
     if (h->fd >= 0)
         lseek(h->fd, newpos, SEEK_SET);
@@ -1337,7 +1367,13 @@ static struct memory_handle *prep_bufdata(int handle_id, size_t *size,
         /* this ensures *size <= buffer_len - h->ridx + GUARD_BUFSIZE */
     }
 
-    off_t end = h->end;
+    /* S4-D4 (Finding C-3): acquire fence pairing the writer's release in
+     * publish_read_safe_end(). Read read_safe_end (not h->end) — the
+     * writer publishes ring data BEFORE publishing read_safe_end, so
+     * any ring bytes we read after this acquire are guaranteed to be
+     * the published bytes for positions <= read_safe_end. */
+    off_t end = h->read_safe_end;
+    membarrier();
     off_t wait_end = h->pos + realsize;
 
     if (end < wait_end && end < h->filesize) {
@@ -1363,7 +1399,9 @@ static struct memory_handle *prep_bufdata(int handle_id, size_t *size,
             if (h->signaled != 0)
                 return NULL; /* Wait must be abandoned */
 
-            end = h->end;
+            /* S4-D4: acquire fence on each reload — see comment above. */
+            end = h->read_safe_end;
+            membarrier();
         }
         while (end < wait_end && end < h->filesize);
 
