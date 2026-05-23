@@ -390,30 +390,41 @@ static void stamp_chunk(struct chunkdesc *desc, unsigned long elapsed,
  * expects pcm_fill_state in tenth-% units (e.g. full pcm buffer is 10) */
 static void boost_codec_thread(int pcm_fill_state)
 {
+    /* S4-D3: flattened from a fill-band ramp to a constant
+     * PRIORITY_PLAYBACK_MAX. Proactive boost at Q_CODEC_RUN
+     * (apps/codec_thread.c:run_codec) now owns priority lifecycle.
+     * Retained as a no-op safety net and revert anchor for Finding C-1
+     * (codec base priority == UI priority). The original fill-band ramp
+     * demoted codec back to PRIORITY_PLAYBACK at >=70% fill, which would
+     * undo the proactive boost in steady state. */
     static const int8_t prios[11] =
     {
         PRIORITY_PLAYBACK_MAX,      /*   0 - 10% */
-        PRIORITY_PLAYBACK_MAX+1,    /*  10 - 20% */
-        PRIORITY_PLAYBACK_MAX+3,    /*  20 - 30% */
-        PRIORITY_PLAYBACK_MAX+5,    /*  30 - 40% */
-        PRIORITY_PLAYBACK_MAX+7,    /*  40 - 50% */
-        PRIORITY_PLAYBACK_MAX+8,    /*  50 - 60% */
-        PRIORITY_PLAYBACK_MAX+9,    /*  60 - 70% */
-        /* raising priority above 70% shouldn't be needed */
-        PRIORITY_PLAYBACK,          /*  70 - 80% */
-        PRIORITY_PLAYBACK,          /*  80 - 90% */
-        PRIORITY_PLAYBACK,          /*  90 -100% */
-        PRIORITY_PLAYBACK,          /*      100% */
+        PRIORITY_PLAYBACK_MAX,      /*  10 - 20% */
+        PRIORITY_PLAYBACK_MAX,      /*  20 - 30% */
+        PRIORITY_PLAYBACK_MAX,      /*  30 - 40% */
+        PRIORITY_PLAYBACK_MAX,      /*  40 - 50% */
+        PRIORITY_PLAYBACK_MAX,      /*  50 - 60% */
+        PRIORITY_PLAYBACK_MAX,      /*  60 - 70% */
+        PRIORITY_PLAYBACK_MAX,      /*  70 - 80% */
+        PRIORITY_PLAYBACK_MAX,      /*  80 - 90% */
+        PRIORITY_PLAYBACK_MAX,      /*  90 -100% */
+        PRIORITY_PLAYBACK_MAX,      /*      100% */
     };
 
     int new_prio = prios[pcm_fill_state];
 
-    /* Keep voice and codec threads at the same priority or else voice
-     * will starve if the codec thread's priority is boosted. */
+    /* S4-D3: voice lockstep removed. Original design moved voice with
+     * codec because the codec was being demoted to PRIORITY_PLAYBACK at
+     * high PCM fill — voice had to match or it would outrank a demoted
+     * codec. With the flattened table + proactive boost owning codec
+     * priority, the demotion path is gone, so voice keeps its own
+     * PRIORITY_VOICE = 12. That puts voice below boosted codec (MAX = 5)
+     * but above UI (16), which is the correct "audio-always-wins"
+     * hierarchy for TTS prompts during playback. */
     if (new_prio != codec_thread_priority)
     {
         codec_thread_set_priority(new_prio);
-        voice_thread_set_priority(new_prio);
         codec_thread_priority = new_prio;
     }
 }

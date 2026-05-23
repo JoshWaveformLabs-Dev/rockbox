@@ -541,6 +541,13 @@ static void run_codec(void)
     codec_queue_ack(Q_CODEC_RUN);
 
     trigger_cpu_boost();
+#ifdef HAVE_PRIORITY_SCHEDULING
+    /* S4-D3: Proactive priority boost. Codec base PRIORITY_PLAYBACK
+     * (16) equals PRIORITY_USER_INTERFACE — first decode frames race
+     * UI/button work at equal priority. Lift to PRIORITY_PLAYBACK_MAX
+     * for the run_codec() lifetime; restored at function exit. */
+    thread_set_priority(codec_thread_id, PRIORITY_PLAYBACK_MAX);
+#endif
     dsp_configure(ci.dsp, DSP_SET_OUT_FREQUENCY, pcmbuf_get_frequency());
 
     if (!encoder)
@@ -582,6 +589,15 @@ static void run_codec(void)
            status */
         audio_codec_complete(status);
     }
+
+#ifdef HAVE_PRIORITY_SCHEDULING
+    /* S4-D3: Restore base priority on every run_codec() exit, so each
+     * invocation is a self-contained boost lifetime. Covers Q_CODEC_STOP
+     * (CODEC_ACTION_HALT unwind), end-of-track, and codec-error paths.
+     * Seek path (seek_codec -> run_codec recursion) re-sets MAX on the
+     * recursive entry, keeping priority at MAX across the seek. */
+    thread_set_priority(codec_thread_id, PRIORITY_PLAYBACK);
+#endif
 }
 
 /* Handle Q_CODEC_SEEK */
