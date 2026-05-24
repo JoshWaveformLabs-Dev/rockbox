@@ -1380,6 +1380,23 @@ static struct memory_handle *prep_bufdata(int handle_id, size_t *size,
         /* Wait for the data to be ready */
         unsigned int request = 1;
 
+#ifdef HAVE_PRIORITY_SCHEDULING
+        /* S4-D5 (Finding C-2): defensive priority boost while waiting on
+         * the buffering thread. Pairs with the S4-D3 proactive boost at
+         * run_codec() entry (apps/codec_thread.c:543-550). D3 owns the
+         * steady-state codec lifetime; D5 covers codec paths NOT inside
+         * run_codec() (notably codec_load_buf() during Q_CODEC_LOAD,
+         * before the proactive boost takes effect) and acts as a local
+         * guarantee at the sleep site itself. Generic over thread_self()
+         * to avoid inverting the codec -> buffering header dependency
+         * direction for one defensive call site; for the codec hot path
+         * post-D3 this is a no-op (already at MAX). Snapshot/restore so
+         * we don't trample whatever priority the caller had on entry. */
+        const unsigned int self_tid = thread_self();
+        const int saved_prio = thread_get_priority(self_tid);
+        thread_set_priority(self_tid, PRIORITY_PLAYBACK_MAX);
+#endif
+
         do
         {
             if (--request == 0) {
@@ -1393,17 +1410,21 @@ static struct memory_handle *prep_bufdata(int handle_id, size_t *size,
             /* it is not safe for a non-buffering thread to sleep while
              * holding a handle */
             h = find_handle(handle_id);
-            if (!h)
-                return NULL;
-
-            if (h->signaled != 0)
-                return NULL; /* Wait must be abandoned */
+            if (!h || h->signaled != 0)
+                break; /* abandon wait — priority restored below */
 
             /* S4-D4: acquire fence on each reload — see comment above. */
             end = h->read_safe_end;
             membarrier();
         }
         while (end < wait_end && end < h->filesize);
+
+#ifdef HAVE_PRIORITY_SCHEDULING
+        thread_set_priority(self_tid, saved_prio);
+#endif
+
+        if (!h || h->signaled != 0)
+            return NULL; /* Wait abandoned (handle gone or signaled) */
 
         filerem = h->filesize - h->pos;
         if (realsize > filerem)
