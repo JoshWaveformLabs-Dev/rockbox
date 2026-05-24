@@ -462,6 +462,10 @@ bool get_metadata_ex(struct mp3entry* id3, int fd, const char* trackname, int fl
     /* Take our best guess at the codec type based on file extension */
     id3->codectype = probe_file_format(trackname);
 
+#ifdef WAVEFORM_DEBUG_OPUS_LOAD
+    fprintf(stderr, "WF_OPUS_DBG: probe codectype=%d path=%s\n", id3->codectype, trackname);
+#endif
+
     /* default values for embedded cuesheets */
     id3->has_embedded_cuesheet = false;
     id3->embedded_cuesheet.pos = 0;
@@ -476,13 +480,35 @@ bool get_metadata_ex(struct mp3entry* id3, int fd, const char* trackname, int fl
         DEBUGF("nothing to parse for %s (format %s)\n", trackname, entry->label);
         res_str = " - [No parser]\n";
         success = false;
+#ifdef WAVEFORM_DEBUG_OPUS_LOAD
+        fprintf(stderr, "WF_OPUS_DBG: parse_func NULL codectype=%d label=%s\n",
+             id3->codectype, entry->label);
+#endif
     }
-    else if (!entry->parse_func(fd, id3))
+    else
     {
-        DEBUGF("parsing %s failed (format: %s)\n", trackname, entry->label);
-        res_str = " - [Parser failed]\n";
-        success = false;
-        wipe_mp3entry(id3); /* ensure the mp3entry is clear */
+#ifdef WAVEFORM_DEBUG_OPUS_LOAD
+        fprintf(stderr, "WF_OPUS_DBG: dispatch parse_func codectype=%d label=%s\n",
+             id3->codectype, entry->label);
+#endif
+        if (!entry->parse_func(fd, id3))
+        {
+            DEBUGF("parsing %s failed (format: %s)\n", trackname, entry->label);
+            res_str = " - [Parser failed]\n";
+            success = false;
+#ifdef WAVEFORM_DEBUG_OPUS_LOAD
+            fprintf(stderr, "WF_OPUS_DBG: parse_func returned FALSE codectype=%d\n",
+                 id3->codectype);
+#endif
+            wipe_mp3entry(id3); /* ensure the mp3entry is clear */
+        }
+#ifdef WAVEFORM_DEBUG_OPUS_LOAD
+        else
+        {
+            fprintf(stderr, "WF_OPUS_DBG: parse_func returned TRUE codectype=%d\n",
+                 id3->codectype);
+        }
+#endif
     }
 
     if ((flags & METADATA_CLOSE_FD_ON_EXIT))

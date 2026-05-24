@@ -73,12 +73,22 @@ int get_ogg_format_and_move_to_comments(int fd, unsigned char *buf)
         if (lseek(fd, 47, SEEK_SET) < 0)
         {
             DEBUGF("Could not seek to ogg");
+#ifdef WAVEFORM_DEBUG_OPUS_LOAD
+            fprintf(stderr, "WF_OPUS_DBG: ogg_format OpusHead seek-to-47 FAILED\n");
+#endif
             return AFMT_UNKNOWN;
         }
+#ifdef WAVEFORM_DEBUG_OPUS_LOAD
+        fprintf(stderr, "WF_OPUS_DBG: ogg_format detected=AFMT_OPUS, seek-to-47 ok\n");
+#endif
         return AFMT_OPUS;
     }
     /* Unsupported format, try to print the marker, catches Ogg/FLAC at least */
     DEBUGF("Unsupported format in Ogg stream: %16s\n", &buf[28]);
+#ifdef WAVEFORM_DEBUG_OPUS_LOAD
+    fprintf(stderr, "WF_OPUS_DBG: ogg_format UNKNOWN, marker bytes 28-35: %02x%02x%02x%02x%02x%02x%02x%02x\n",
+         buf[28], buf[29], buf[30], buf[31], buf[32], buf[33], buf[34], buf[35]);
+#endif
     return AFMT_UNKNOWN;
 }
 
@@ -115,6 +125,9 @@ bool get_ogg_metadata(int fd, struct mp3entry* id3)
     bool eof = false;
 
     id3->codectype = get_ogg_format_and_move_to_comments(fd, buf);
+#ifdef WAVEFORM_DEBUG_OPUS_LOAD
+    fprintf(stderr, "WF_OPUS_DBG: ogg_meta entry codectype=%d\n", id3->codectype);
+#endif
     switch (id3->codectype)
     {
         case AFMT_OGG_VORBIS:
@@ -131,6 +144,10 @@ bool get_ogg_metadata(int fd, struct mp3entry* id3)
             // FIXME handle an actual channel mapping table
             break;
         default:
+#ifdef WAVEFORM_DEBUG_OPUS_LOAD
+            fprintf(stderr, "WF_OPUS_DBG: ogg_meta default-case FAIL codectype=%d\n",
+                 id3->codectype);
+#endif
             return false;
     }
 
@@ -142,14 +159,22 @@ bool get_ogg_metadata(int fd, struct mp3entry* id3)
     serial = get_long_le(&buf[14]);
     long remaining = 0;
     comment_size = read_vorbis_tags(fd, id3, remaining);
+#ifdef WAVEFORM_DEBUG_OPUS_LOAD
+    fprintf(stderr, "WF_OPUS_DBG: ogg_meta tags read comment_size=%ld serial=%ld filesize=%lu\n",
+         comment_size, serial, (unsigned long)id3->filesize);
+#endif
 
-    /* We now need to search for the last page in the file - identified by 
+    /* We now need to search for the last page in the file - identified by
      * by ('O','g','g','S',0) and retrieve totalsamples.
      */
 
     /* A page is always < 64 kB */
     if (lseek(fd, -(MIN(64 * 1024, id3->filesize)), SEEK_END) < 0)
     {
+#ifdef WAVEFORM_DEBUG_OPUS_LOAD
+        fprintf(stderr, "WF_OPUS_DBG: ogg_meta seek-tail FAIL filesize=%lu\n",
+             (unsigned long)id3->filesize);
+#endif
         return false;
     }
 
@@ -222,6 +247,10 @@ bool get_ogg_metadata(int fd, struct mp3entry* id3)
         logf("serialno mismatch");
         logf("%ld", serial);
         logf("%ld", last_serial);
+#ifdef WAVEFORM_DEBUG_OPUS_LOAD
+        fprintf(stderr, "WF_OPUS_DBG: ogg_meta serial-mismatch FAIL serial=%ld last=%ld samples=%lu codectype=%d\n",
+             serial, last_serial, (unsigned long)id3->samples, id3->codectype);
+#endif
         return false;
     }
 
@@ -229,11 +258,21 @@ bool get_ogg_metadata(int fd, struct mp3entry* id3)
     if (id3->length <= 0)
     {
         logf("ogg length invalid!");
+#ifdef WAVEFORM_DEBUG_OPUS_LOAD
+        fprintf(stderr, "WF_OPUS_DBG: ogg_meta zero-length FAIL samples=%lu freq=%lu codectype=%d\n",
+             (unsigned long)id3->samples,
+             (unsigned long)id3->frequency, id3->codectype);
+#endif
         return false;
     }
-    
+
     id3->bitrate = (((int64_t) id3->filesize - comment_size) * 8) / id3->length;
-    
+
+#ifdef WAVEFORM_DEBUG_OPUS_LOAD
+    fprintf(stderr, "WF_OPUS_DBG: ogg_meta SUCCESS codectype=%d samples=%lu length=%lu bitrate=%lu\n",
+         id3->codectype, (unsigned long)id3->samples,
+         (unsigned long)id3->length, (unsigned long)id3->bitrate);
+#endif
     return true;
 }
 

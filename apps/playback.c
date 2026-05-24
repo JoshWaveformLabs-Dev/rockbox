@@ -1680,6 +1680,12 @@ static bool audio_init_codec(struct track_info *track_infop,
     track_info_sync(track_infop);
 #endif
 
+#ifdef WAVEFORM_DEBUG_OPUS_LOAD
+    if (track_id3->codectype == AFMT_OPUS)
+        fprintf(stderr, "WF_OPUS_DBG: audio_init_codec calling codec_load afmt=%d hid=%d\n",
+             track_id3->codectype, hid);
+#endif
+
     return codec_load(hid, track_id3->codectype);
     (void)track_infop; /* When codec buffering isn't supported */
 }
@@ -2334,6 +2340,11 @@ static int audio_finish_load_track(struct track_info *infop)
             logf("No codec for: %s", track_id3->path);
             trackstat = LOAD_TRACK_ERR_FINISH_FAILED;
         }
+#ifdef WAVEFORM_DEBUG_OPUS_LOAD
+        if (track_id3->codectype == AFMT_OPUS)
+            fprintf(stderr, "WF_OPUS_DBG: audio_buffer_codec FAIL afmt=%d codec_hid=%d\n",
+                 track_id3->codectype, infop->codec_hid);
+#endif
 
         goto audio_finish_load_track_exit;
     }
@@ -2375,6 +2386,12 @@ static int audio_finish_load_track(struct track_info *infop)
 
     int hid = bufopen(track_id3->path, file_offset, audiotype, NULL);
 
+#ifdef WAVEFORM_DEBUG_OPUS_LOAD
+    if (track_id3->codectype == AFMT_OPUS)
+        fprintf(stderr, "WF_OPUS_DBG: bufopen audio hid=%d afmt=%d\n",
+             hid, track_id3->codectype);
+#endif
+
     if (hid >= 0)
     {
         infop->audio_hid = hid;
@@ -2395,6 +2412,11 @@ static int audio_finish_load_track(struct track_info *infop)
         {
             /* This is the current track to decode - should be started now */
             trackstat = LOAD_TRACK_READY;
+#ifdef WAVEFORM_DEBUG_OPUS_LOAD
+            if (track_id3->codectype == AFMT_OPUS)
+                fprintf(stderr, "WF_OPUS_DBG: LOAD_TRACK_READY afmt=%d audio_hid=%d\n",
+                     track_id3->codectype, hid);
+#endif
         }
     }
     else

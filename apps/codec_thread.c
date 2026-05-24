@@ -39,6 +39,9 @@
 #include "logf.h"
 #if defined(WAVEFORM_TELEMETRY_CODEC) || defined(WAVEFORM_TELEMETRY_STACK)
 #include "wf_telemetry.h"
+#ifdef WAVEFORM_DEBUG_OPUS_LOAD
+#include <stdio.h>
+#endif
 #endif
 
 /* macros to enable logf for queues
@@ -460,6 +463,12 @@ static void load_codec(const struct codec_load_info *ev_data)
     struct codec_load_info data = *ev_data;
     bool const encoder = type_is_encoder(data.afmt);
 
+#ifdef WAVEFORM_DEBUG_OPUS_LOAD
+    if (data.afmt == AFMT_OPUS)
+        fprintf(stderr, "WF_OPUS_DBG: load_codec ENTRY afmt=%d hid=%d encoder=%d\n",
+             data.afmt, data.hid, (int)encoder);
+#endif
+
 #ifdef WAVEFORM_TELEMETRY_CODEC
     wf_codec_note_load_begin((uint16_t)data.afmt);
 #endif
@@ -655,6 +664,15 @@ static void NORETURN_ATTR codec_thread(void)
         {
         case Q_CODEC_LOAD:
             LOGFQUEUE("codec < Q_CODEC_LOAD");
+#ifdef WAVEFORM_DEBUG_OPUS_LOAD
+            {
+                const struct codec_load_info *_p =
+                    (const struct codec_load_info *)ev.data;
+                if (_p && _p->afmt == AFMT_OPUS)
+                    fprintf(stderr, "WF_OPUS_DBG: Q_CODEC_LOAD received afmt=%d hid=%d\n",
+                         _p->afmt, _p->hid);
+            }
+#endif
             load_codec((const struct codec_load_info *)ev.data);
             break;
 
@@ -743,6 +761,11 @@ bool codec_load(int hid, int cod_spec)
     struct codec_load_info parm = { hid, cod_spec };
 
     LOGFQUEUE("audio >| codec Q_CODEC_LOAD: %d, %d", hid, cod_spec);
+#ifdef WAVEFORM_DEBUG_OPUS_LOAD
+    if (cod_spec == AFMT_OPUS)
+        fprintf(stderr, "WF_OPUS_DBG: codec_load posting Q_CODEC_LOAD afmt=%d hid=%d\n",
+             cod_spec, hid);
+#endif
     return codec_queue_send(Q_CODEC_LOAD, (intptr_t)&parm) != 0;
 }
 
