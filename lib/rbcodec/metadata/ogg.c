@@ -178,15 +178,14 @@ bool get_ogg_metadata(int fd, struct mp3entry* id3)
         return false;
     }
 
-    while (!eof) 
+    while (!eof)
     {
         r = read(fd, &buf[remaining], MAX_PATH - remaining);
-        
-        if (r <= 0) 
+        if (r <= 0)
         {
             eof = true;
-        } 
-        else 
+        }
+        else
         {
             remaining += r;
         }

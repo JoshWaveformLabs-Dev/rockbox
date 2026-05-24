@@ -262,6 +262,10 @@ int app_open(const char *path, int oflag, ...)
         FILE_ERROR_RETURN(ENAMETOOLONG, -1);
 
     oflag |= O_CLOEXEC;
+#ifdef O_BINARY
+    /* Windows text mode treats 0x1a as EOF; all RB file I/O must be binary. */
+    oflag |= O_BINARY;
+#endif
     return os_open(fpath, oflag __OPEN_MODE_ARG);
 }
 
