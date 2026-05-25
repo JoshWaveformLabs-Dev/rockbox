@@ -261,6 +261,12 @@ static void codec_pcmbuf_insert_callback(
             {
                 pcmbuf_write_complete(dst.remcount, ci.id3->elapsed,
                                       ci.id3->offset);
+#ifdef WAVEFORM_TELEMETRY_CODEC
+                /* S5-D3: liveness probe — fires at most once per HZ ticks
+                 * (~1 s) inside the emitter. Cost when not due is one
+                 * IRQ-save + compare + restore. */
+                wf_codec_note_run_alive((uint16_t)codec_type);
+#endif
             }
             else if (src.remcount <= 0)
             {

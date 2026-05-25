@@ -419,6 +419,11 @@ static uint32_t wf_codec_pending_run_tick;
 static uint16_t wf_codec_pending_load_afmt;
 static uint16_t wf_codec_pending_run_afmt;
 
+/* S5-D3: liveness-probe throttle. wf_codec_note_run_alive() fires at most
+ * one event per HZ ticks. Reset to 0 by wf_codec_note_run_begin() so the
+ * first frame of every run lands an ALIVE event without waiting a second. */
+static uint32_t wf_codec_run_alive_last_tick;
+
 /* Linear scan + first-free allocation. Returns NULL if all slots taken
  * (silent drop — production-stripped set is 5 codecs vs 8 slots). */
 static struct wf_codec_record *wf_codec_slot_locked(uint16_t afmt)
@@ -474,8 +479,40 @@ void wf_codec_note_run_begin(uint16_t afmt)
     int irq = disable_irq_save();
     wf_codec_pending_run_tick = (uint32_t)current_tick;
     wf_codec_pending_run_afmt = afmt;
+    /* S5-D3: arm the alive throttle so the next note_run_alive() fires
+     * immediately on the first decoded frame of this run. */
+    wf_codec_run_alive_last_tick = 0;
     restore_irq(irq);
     wf_event_record(WF_SUB_CODEC, WF_EVT_CODEC_RUN_BEGIN, afmt, 0, 0, 0);
+}
+
+/* S5-D3: per-frame liveness probe. Throttled to one record per HZ ticks
+ * (~1 s) so a 60–90 s capture costs at most ~90 events. The check is a
+ * single 32-bit subtract under IRQ-save, then a fast bail when not due —
+ * cheaper than the wf_event_record() it gates. Reset by note_run_begin(). */
+void wf_codec_note_run_alive(uint16_t afmt)
+{
+    uint32_t now = (uint32_t)current_tick;
+    uint32_t elapsed;
+    int irq = disable_irq_save();
+    if (wf_codec_pending_run_afmt != afmt)
+    {
+        /* Not the active run — silently drop. Stale alive from a torn-
+         * down codec would otherwise extend the previous run's window. */
+        restore_irq(irq);
+        return;
+    }
+    if (wf_codec_run_alive_last_tick != 0 &&
+        (now - wf_codec_run_alive_last_tick) < (uint32_t)HZ)
+    {
+        restore_irq(irq);
+        return;
+    }
+    wf_codec_run_alive_last_tick = now;
+    elapsed = now - wf_codec_pending_run_tick;
+    restore_irq(irq);
+    wf_event_record(WF_SUB_CODEC, WF_EVT_CODEC_RUN_ALIVE,
+                    afmt, elapsed, 0, 0);
 }
 
 void wf_codec_note_run_end(uint16_t afmt, int32_t status)

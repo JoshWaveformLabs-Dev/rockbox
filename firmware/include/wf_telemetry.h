@@ -65,6 +65,11 @@ enum {
     WF_EVT_CODEC_LOAD_END   = 0x0301,
     WF_EVT_CODEC_RUN_BEGIN  = 0x0302,
     WF_EVT_CODEC_RUN_END    = 0x0303,
+    WF_EVT_CODEC_RUN_ALIVE  = 0x0304, /* S5-D3: per-frame liveness probe,
+                                       * throttled to ~1 Hz inside codec hot
+                                       * path. Lets offline audits extend the
+                                       * BEGIN/END window when END was evicted
+                                       * by ring wrap or never fired. */
 
     WF_EVT_STORAGE_READ_BEGIN  = 0x0400,
     WF_EVT_STORAGE_READ_END    = 0x0401,
@@ -276,6 +281,14 @@ void wf_codec_note_load_begin(uint16_t afmt);
 void wf_codec_note_load_end(uint16_t afmt, int32_t status);
 void wf_codec_note_run_begin(uint16_t afmt);
 void wf_codec_note_run_end(uint16_t afmt, int32_t status);
+
+/* S5-D3: per-frame liveness probe. Called from codec_pcmbuf_insert_callback()
+ * after each successful pcmbuf_write_complete(). Internally throttled to one
+ * record per HZ ticks (~1 s) so a 60–90 s capture costs at most ~90 events,
+ * leaving the ring budget for ALLOC / STORAGE records. The throttle state is
+ * reset to "fire immediately" by wf_codec_note_run_begin() so each codec run
+ * lands one ALIVE within the first frame, even back-to-back short tracks. */
+void wf_codec_note_run_alive(uint16_t afmt);
 
 /* Copy the populated slots into caller-provided array. *count_out (if
  * non-NULL) returns how many slots are in_use, capped at max_records. */
