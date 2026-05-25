@@ -481,7 +481,39 @@ static struct memory_handle * find_handle(int handle_id)
            the  move would be less than the size of a memory_handle after
            correcting for wraps or if the handle is not found in the linked
            list for adjustment.  This function has no side effects if false
-           is returned. */
+           is returned.
+
+   S5-D5 (concurrency hazard, structurally absent on shipping target):
+
+   move_handle() runs on buffering_thread under llist_mutex. The codec
+   thread reads handle structs via find_handle() / prep_bufdata() /
+   bufftell() / bufgetdata() without taking llist_mutex. Between
+   adjust_handle_node() and the trailing memmove(dest, src, ...) there
+   is a window in which mru_cache and handle_list already reference
+   dest but dest contains uninitialised junk. A second window opens
+   while wrap-correction memmoves rearrange ring bytes before
+   shrink_handle() updates the moved handle's h->data offset to its
+   new position.
+
+   On the iPod Classic 6g/7g target (single-core ARM, cooperative
+   threading: thread switches only at explicit yield/sleep points, IRQs
+   do not preempt across function boundaries), the buffering thread
+   holds the CPU continuously from adjust_handle_node() through the
+   final memmove and the post-move h->data update in shrink_handle().
+   The codec thread is parked at a yield point and cannot observe the
+   intermediate state. Race is structurally absent.
+
+   On the SDL host build (preemptive pthreads) and on any future SMP
+   retarget the race becomes observable. Closure for those targets
+   would require either (a) reordering to do all memmoves first and
+   pair adjust_handle_node() with a release fence so list traversal
+   sees only fully-published structs, plus a matching acquire in
+   find_handle(); or (b) a seqlock-style retry in the codec readers;
+   or (c) wholesale move-protocol redesign with explicit codec
+   acknowledgement. Each of these is materially larger than the
+   Stage-4 read_safe_end fix and is deferred to a dedicated stage.
+
+   See docs/research/HOT_PATH_AUDIT_STRUCTURAL.md Finding C-4. */
 static bool move_handle(struct memory_handle **h, size_t *delta,
                         size_t data_size)
 {
