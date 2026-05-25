@@ -2941,6 +2941,53 @@ static bool dbg_wf_codec(void)
 }
 #endif /* WAVEFORM_TELEMETRY_CODEC */
 
+#ifdef WAVEFORM_TELEMETRY_STACK
+static bool dbg_wf_stack(void)
+{
+    int button;
+    bool done = false;
+    /* MAXTHREADS is small (~16); single screenful fits comfortably. */
+    struct wf_stack_record recs[MAXTHREADS];
+    size_t count = 0;
+    FOR_NB_SCREENS(i)
+        screens[i].setfont(FONT_SYSFIXED);
+    while (!done)
+    {
+        size_t slot;
+        button = get_action(CONTEXT_STD, HZ/2);
+        if (button == ACTION_STD_CANCEL)
+            done = true;
+        wf_stack_scan_now();
+        wf_stack_get_records(recs, MAXTHREADS, &count);
+        FOR_NB_SCREENS(i)
+        {
+            int line = 0;
+            screens[i].clear_display();
+            screens[i].putsf(0, line++, "WF Stack ov:%lu sc:%lu",
+                             (unsigned long)wf_stack_get_overrun_total(),
+                             (unsigned long)wf_stack_get_scan_count());
+            for (slot = 0; slot < count; slot++)
+            {
+                if (!recs[slot].in_use)
+                    continue;
+                screens[i].putsf(0, line++,
+                    "%-6.6s p%lu/%lu %s",
+                    recs[slot].name,
+                    (unsigned long)recs[slot].peak_used,
+                    (unsigned long)recs[slot].stack_size,
+                    recs[slot].overrun ? "OVR" : "");
+            }
+            if (count == 0)
+                screens[i].puts(0, line, "no data");
+            screens[i].update();
+        }
+    }
+    FOR_NB_SCREENS(i)
+        screens[i].setfont(FONT_UI);
+    return false;
+}
+#endif /* WAVEFORM_TELEMETRY_STACK */
+
 #ifdef WAVEFORM_TELEMETRY_STORAGE
 static bool dbg_wf_storage(void)
 {
@@ -3234,6 +3281,9 @@ static const struct {
 #endif
 #ifdef WAVEFORM_TELEMETRY_CODEC
         {"WF: Codec",   dbg_wf_codec   },
+#endif
+#ifdef WAVEFORM_TELEMETRY_STACK
+        {"WF: Stack",   dbg_wf_stack   },
 #endif
 #ifdef WAVEFORM_TELEMETRY_STORAGE
         {"WF: Storage", dbg_wf_storage },

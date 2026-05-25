@@ -513,6 +513,15 @@ void wf_codec_note_run_alive(uint16_t afmt)
     restore_irq(irq);
     wf_event_record(WF_SUB_CODEC, WF_EVT_CODEC_RUN_ALIVE,
                     afmt, elapsed, 0, 0);
+#ifdef WAVEFORM_TELEMETRY_STACK
+    /* S5-D4: piggyback a stack-canary scan on the 1 Hz ALIVE throttle.
+     * Keeps wf_stack_state's peak_used/last_used current during long
+     * codec runs so a crashing codec (suspected ALAC/AAC stack overflow)
+     * leaves diagnostic state within ~1 s of the fault. wf_stack_scan_now
+     * walks every thread's DEADBEEF region — bounded work, runs on the
+     * codec thread, no corelock conflict here. */
+    wf_stack_scan_now();
+#endif
 }
 
 void wf_codec_note_run_end(uint16_t afmt, int32_t status)
