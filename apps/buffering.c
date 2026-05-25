@@ -1270,8 +1270,15 @@ static void rebuffer_handle(int handle_id, off_t newpos)
 /* Backend to bufseek and bufadvance */
 static int seek_handle(struct memory_handle *h, off_t newpos)
 {
-    if ((newpos < h->start || newpos >= h->end) &&
-        (newpos < h->filesize || h->end < h->filesize)) {
+    /* S5-D2 (Finding C-3 closure): snapshot the publication pointer
+     * with acquire fence, mirroring the codec reader in prep_bufdata().
+     * No ring access here, so the fence is compiler-barrier-only on
+     * shipping targets — kept for pattern symmetry and future SMP. */
+    off_t end = h->read_safe_end;
+    membarrier();
+
+    if ((newpos < h->start || newpos >= end) &&
+        (newpos < h->filesize || end < h->filesize)) {
         /* access before or after buffered data and not to end of file or file
            is not buffered to the end-- a rebuffer is needed. */
         return queue_send(&buffering_queue, Q_REBUFFER_HANDLE,
