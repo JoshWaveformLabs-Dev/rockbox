@@ -247,3 +247,8 @@
 
 /* Define this if a programmable hotkey is mapped */
 #define HAVE_HOTKEY
+
+/* Waveform OS m1–m9 strip block: shared with sdlapp.h.
+ * Placed last so all device-shape defines above are overridden by the
+ * strip undefs (HAVE_RECORDING, HAVE_TAGCACHE, CONFIG_TUNER, etc.). */
+#include "waveform_strip.h"

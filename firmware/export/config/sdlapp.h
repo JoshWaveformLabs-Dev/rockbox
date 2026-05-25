@@ -60,15 +60,8 @@
 
 /* The number of bytes reserved for loadable plugins */
 #define PLUGIN_BUFFER_SIZE 0x80000
-#undef HAVE_ROCKBOX_PLUGINS   /* Waveform m1: all plugins stripped */
-#define HAVE_TEST_PLUGINS     /* D5: engineering test suite (keep permanently) */
-#undef HAVE_VOICE_THREAD      /* Waveform m2: voice/talk UI stripped */
-#undef HAVE_TAGCACHE          /* Waveform m4: tagcache/database stripped */
-#undef HAVE_RECORDING         /* Waveform m6: recording stripped */
-#undef HAVE_FMRADIO           /* Waveform m7: FM radio stripped */
-#define WAVEFORM_NO_CROSSFADE /* Waveform m8: crossfade stripped (consumed by config.h:1082) */
-#define WAVEFORM_STRIP_CODECS /* Waveform m9: codec set trimmed to MP3/AAC/FLAC/ALAC/Opus */
-#define WAVEFORM_WFLIB        /* Waveform stage 3: compact library index reader */
+/* m1–m9 strip block: shared with all Waveform targets */
+#include "waveform_strip.h"
 
 /* Waveform OS post-m9 Stage 1 instrumentation. Engineering builds only.
  * Production builds: comment out the WAVEFORM_TELEMETRY line — every hook
