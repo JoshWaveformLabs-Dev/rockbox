@@ -219,6 +219,7 @@ uint32_t wf_stack_get_scan_count(void);
 void wf_canary_worker_init(void);
 
 #else  /* !WAVEFORM_TELEMETRY_STACK */
+#define WF_CANARY_WORKER_INIT_STUBBED 1
 static inline void wf_canary_worker_init(void) {}
 #endif /* WAVEFORM_TELEMETRY_STACK */
 
@@ -344,4 +345,15 @@ void wf_storage_counters_get(struct wf_storage_counters *out);
 #endif /* WAVEFORM_TELEMETRY_STORAGE */
 
 #endif /* WAVEFORM_TELEMETRY */
+
+/* Production-build fallbacks for telemetry symbols that core code calls
+ * unconditionally (e.g. apps/main.c). Defined OUTSIDE WAVEFORM_TELEMETRY so
+ * stripped targets (ipodvideo, all non-sim) still link. */
+#ifndef WAVEFORM_TELEMETRY_STACK
+#ifndef WF_CANARY_WORKER_INIT_STUBBED
+#define WF_CANARY_WORKER_INIT_STUBBED 1
+static inline void wf_canary_worker_init(void) {}
+#endif
+#endif
+
 #endif /* _WF_TELEMETRY_H_ */

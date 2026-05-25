@@ -28,7 +28,7 @@ preprocess2file = $(shell $(CC) $(PPCFLAGS) $(3) -E -P -x c -include config.h $(
 		grep -v '^$(_hash_)' | grep -v "^$$" > $(2))
 
 asmdefs2file = $(SILENT)$(CC) $(PPCFLAGS) $(3) -S -x c -o - -include config.h $(1) | \
-	perl -ne 'if(/^_?AD_(\w+):$$/){$$var=$$1}else{/^\W\.(?:word|long)\W(.*)$$/ && $$var && print "\#define $$var $$1\n";$$var=0}' > $(2)
+	perl -ne 's/\r$$//; if(/^_?AD_(\w+):$$/){$$var=$$1}else{/^\W\.(?:word|long)\W(.*)$$/ && $$var && print "\#define $$var $$1\n";$$var=0}' > $(2)
 
 c2obj = $(addsuffix .o,$(basename $(call full_path_subst,$(ROOTDIR)/%,$(BUILDDIR)/%,$(1))))
 
