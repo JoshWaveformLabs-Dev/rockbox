@@ -3057,7 +3057,11 @@ static bool dbg_wf_ring_dump(void)
                                             resolved, sizeof(resolved));
     printf("wf_ring_dump: %s -> %s\n", vpath, opath ? opath : "(resolve failed)");
     fflush(stdout);
-#else
+#elif defined(SIMULATOR)
+    /* Legacy SDL simulator path: host stdio available. Native embedded
+     * targets (e.g. ipodvideo ARM) have no host stdout and Rockbox's
+     * firmware/libc/include/stdio.h doesn't declare printf/fflush/stdout —
+     * the splashf below provides equivalent on-device feedback. */
     printf("wf_ring_dump: %s\n", vpath);
     fflush(stdout);
 #endif

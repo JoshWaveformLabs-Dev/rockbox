@@ -252,3 +252,16 @@
  * Placed last so all device-shape defines above are overridden by the
  * strip undefs (HAVE_RECORDING, HAVE_TAGCACHE, CONFIG_TUNER, etc.). */
 #include "waveform_strip.h"
+
+/* Waveform OS post-m9 Stage 1 instrumentation — promoted to shipping on
+ * ipodvideo in Stage 6.2 (mirrors sdlapp.h:69-76). Every hook is
+ * #ifdef-gated and falls through to zero-cost when undefined; on-path
+ * cost is event-record-only (Stage 4 Finding A, Stage 5 D3 throttling). */
+#define WAVEFORM_TELEMETRY
+#ifdef WAVEFORM_TELEMETRY
+#define WAVEFORM_TELEMETRY_BUFLIB
+#define WAVEFORM_TELEMETRY_PCMBUF
+#define WAVEFORM_TELEMETRY_CODEC
+#define WAVEFORM_TELEMETRY_STORAGE
+#define WAVEFORM_TELEMETRY_STACK
+#endif
