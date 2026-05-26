@@ -350,19 +350,39 @@ static uint32_t wf_pcmbuf_low_enter_tick;
 
 void wf_pcmbuf_note_request(uint32_t realrem, uint32_t watermark)
 {
+    /* S6.2-D2: hysteretic edge detector. The original single-threshold
+     * (realrem < watermark) design counted every codec burst-cycle as
+     * an event pair on PP5022 hardware: the codec writes a chunk that
+     * briefly carries realrem above watermark, PCM consumer drains it
+     * back below within one tick, repeat ~1 Hz. Real-hardware capture
+     * accumulated 53 spurious LOW_ENTER/LOW_EXIT pairs in a short
+     * playback session, drowning genuine starvation signal in noise.
+     * SDL sim never tripped this because the desktop codec outruns PCM
+     * and parks realrem above watermark — single-threshold edge fired
+     * once and stayed at zero, masking the bug during D1 validation.
+     *
+     * New semantics: ENTER the danger band only when realrem drops
+     * below watermark/4 (~0.5 s of audio on a BYTERATE*2 watermark);
+     * EXIT only when realrem recovers back to the full watermark.
+     * The wide gap eliminates per-burst thrash while preserving the
+     * "playback ran short on headroom" signal the metric was designed
+     * to surface. min_fill_ever and low_total_ticks remain meaningful
+     * — lifetime fill floor + cumulative time spent in the danger
+     * band, respectively.
+     *
+     * Emit inside the critical section: LOW_ENTER/LOW_EXIT pairs must
+     * stay strictly ordered in the ring relative to the counter state
+     * they describe. wf_event_record's own disable_irq_save() nests
+     * harmlessly (Rockbox saves/restores prior state, not raw enable). */
+    uint32_t danger_low = watermark >> 2;
     uint32_t now = (uint32_t)current_tick;
-    int now_low = (realrem < watermark) ? 1 : 0;
     int was_low;
     uint32_t held = 0;
-    /* Emit inside the critical section: LOW_ENTER/LOW_EXIT pairs must stay
-     * strictly ordered in the ring relative to the counter state they
-     * describe. wf_event_record's own disable_irq_save() nests harmlessly
-     * (Rockbox saves/restores prior state, not raw enable). */
     int irq = disable_irq_save();
     if (realrem < wf_pcmbuf_state.min_fill_ever)
         wf_pcmbuf_state.min_fill_ever = realrem;
     was_low = (int)wf_pcmbuf_state.in_low_state;
-    if (now_low && !was_low)
+    if (!was_low && realrem < danger_low)
     {
         wf_pcmbuf_state.in_low_state = 1;
         wf_pcmbuf_state.low_entry_count++;
@@ -370,7 +390,7 @@ void wf_pcmbuf_note_request(uint32_t realrem, uint32_t watermark)
         wf_event_record(WF_SUB_PCMBUF, WF_EVT_PCMBUF_LOW_ENTER,
                         realrem, watermark, now, 0);
     }
-    else if (!now_low && was_low)
+    else if (was_low && realrem >= watermark)
     {
         held = now - wf_pcmbuf_low_enter_tick;
         wf_pcmbuf_state.low_total_ticks += held;

@@ -226,13 +226,15 @@ static inline void wf_canary_worker_init(void) {}
 /* ----- D4: pcmbuf subsystem ------------------------------------------- */
 #ifdef WAVEFORM_TELEMETRY_PCMBUF
 
-/* Edge-triggered watermark-cross telemetry. low_entry_count counts 0->1
- * transitions of (realrem < watermark); low_exit_count counts 1->0. The
- * state machine is internal — callers just feed every realrem/watermark
- * observation in via wf_pcmbuf_note_request() and we decide whether the
- * sample crosses an edge. min_fill_ever is the smallest realrem ever
+/* Hysteretic starvation-risk telemetry (S6.2-D2: replaces single-edge
+ * design). low_entry_count counts entries into the "danger band"
+ * (realrem < watermark/4); low_exit_count counts safe-recoveries back
+ * to the full watermark. The wide enter/exit gap defeats per-burst
+ * codec oscillation around the watermark — that thrash was emitting
+ * ~53 events per short PP5022 playback session and burying real
+ * starvation signal. min_fill_ever is the smallest realrem ever
  * observed (initialised to UINT32_MAX on first call). low_total_ticks
- * accumulates ticks held in the below-watermark state across runs. */
+ * accumulates ticks spent inside the danger band. */
 struct wf_pcmbuf_counters {
     uint32_t low_entry_count;
     uint32_t low_exit_count;
