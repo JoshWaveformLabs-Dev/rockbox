@@ -13,7 +13,21 @@
  * (engineering vs production) and lives in the consumer file.
  */
 
-#undef HAVE_ROCKBOX_PLUGINS    /* m1: all plugins stripped */
+/*
+ * Plugin gating — Stage 6.3.
+ *   Production:  HAVE_ROCKBOX_PLUGINS undef'd (m1 strip).
+ *   Engineering: pass -DWAVEFORM_ENGINEERING_BUILD via EXTRA_DEFINES
+ *                AND set HAVE_ROCKBOX_PLUGINS=1 as a Make var (tools/root.make
+ *                gates plugins.make on the Make-side var, not the C define).
+ * Engineering builds enable HAVE_ROCKBOX_PLUGINS so test_codec / test_disk
+ * / test_mem are reachable on real hardware. HAVE_TEST_PLUGINS stays
+ * permanently defined so the .c files compile in either mode.
+ */
+#ifdef WAVEFORM_ENGINEERING_BUILD
+#define HAVE_ROCKBOX_PLUGINS   /* engineering build: test_codec / test_disk / test_mem on */
+#else
+#undef HAVE_ROCKBOX_PLUGINS    /* m1: all plugins stripped (production invariant) */
+#endif
 #define HAVE_TEST_PLUGINS      /* D5: engineering test suite (keep permanently) */
 #undef HAVE_VOICE_THREAD       /* m2: voice/talk UI stripped */
 #undef HAVE_TAGCACHE           /* m4: tagcache/database stripped */
