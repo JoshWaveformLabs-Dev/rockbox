@@ -272,7 +272,7 @@ static void bench_init_ci(void)
 
     /* Use the production codec_get_buffer_callback — returns leftover
      * codecbuf space after the codec binary is loaded, identical to what
-     * production playback hands codecs (apps/codec_thread.c:723). */
+     * production playback hands codecs (set up in codec_thread_init()). */
     bench_ci.codec_get_buffer = codec_get_buffer_callback;
     bench_ci.pcmbuf_insert    = bench_cb_pcmbuf_insert;
     bench_ci.set_elapsed      = bench_cb_set_elapsed;
@@ -327,7 +327,7 @@ static void bench_init_ci(void)
 /* ------------------------------------------------------------------ *
  *  Codec-thread worker (runs ON codec thread via                     *
  *  codec_thread_do_callback). Mirrors apps/plugins/test_codec.c      *
- *  codec_thread() at lines 607-629.                                  *
+ *  codec_thread().                                                    *
  * ------------------------------------------------------------------ */
 
 static void bench_codec_thread_worker(void)
@@ -412,8 +412,9 @@ int wf_codec_bench_run_one(int slot,
     bench_ci.id3      = &bench_id3;
     bench_ci.curpos   = 0;
 
-    /* Reset DSP state before each codec — matches test_codec lines 700-702.
-     * Cheap insurance; codecs assume a fresh DSP per track. */
+    /* Reset DSP state before each codec — matches the DSP_RESET/DSP_FLUSH
+     * pair issued at the top of test_codec.c test_track(). Cheap insurance;
+     * codecs assume a fresh DSP per track. */
     dsp_configure(bench_ci.dsp, DSP_RESET, 0);
     dsp_configure(bench_ci.dsp, DSP_FLUSH, 0);
 
@@ -436,7 +437,8 @@ int wf_codec_bench_run_one(int slot,
         }
     }
 
-    /* Wait for codec thread to fully unwind — same idiom as test_codec:732. */
+    /* Wait for codec thread to fully unwind — same idiom test_track() uses
+     * after its codec_playing loop exits ("Be sure it is done"). */
     codec_thread_do_callback(NULL, NULL);
 
     close(bench_fd);
@@ -463,10 +465,11 @@ int wf_codec_bench_run_one(int slot,
     {
         /* realtime_pct_x100 = (duration_ms * 100) / (ticks * 10)
          *                  = duration_ms * 10 / ticks
-         * but to keep precision, mirror test_codec:758 verbatim:
-         *   speed = (duration_ms / 10) * 10000 / ticks
-         *         = duration_cs * 10000 / ticks
-         * which yields units of 1/100 % — exactly realtime_pct_x100. */
+         * but to keep precision, mirror test_codec.c test_track()'s
+         * "speed = duration * 10000 / ticks" — duration is in centiseconds
+         * (id3.length / 10) and ticks is in HZ-ticks (= centiseconds on
+         * HZ=100), so the result is units of 1/100 % — exactly
+         * realtime_pct_x100. */
         uint32_t duration_cs = out->duration_ms / 10;
         out->realtime_pct_x100 =
             (uint32_t)(((uint64_t)duration_cs * 10000ull) / out->decode_ticks);
