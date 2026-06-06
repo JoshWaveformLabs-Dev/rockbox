@@ -147,6 +147,10 @@
 #include "wf_telemetry.h"
 #endif
 
+#ifdef WAVEFORM_TELEMETRY_BENCH
+#include "wf_codec_bench.h"
+#endif
+
 #ifdef WAVEFORM_WFLIB
 #include "wf_lib_reader.h"
 #endif
@@ -3080,6 +3084,128 @@ static bool dbg_wf_ring_dump(void)
 
 #endif /* WAVEFORM_TELEMETRY */
 
+#ifdef WAVEFORM_TELEMETRY_BENCH
+/* Stage 6.3 D4: in-firmware codec benchmark. State machine:
+ *   0 = idle   (press SELECT to start)
+ *   1 = running (live slot counter; CANCEL flags abort to bench engine)
+ *   2 = done   (5 results on screen + wf_codec_bench.txt status)
+ * Refuses when audio_status() & AUDIO_STATUS_PLAY — CANON: playback wins. */
+static bool dbg_wf_codec_bench(void)
+{
+    bool done = false;
+    volatile bool cancel = false;
+    int state = 0;
+    int cur_slot = 0;
+    struct wf_bench_result res[WF_BENCH_CORPUS_COUNT];
+    bool wrote_report = false;
+
+    memset(res, 0, sizeof(res));
+
+    if (audio_status() & AUDIO_STATUS_PLAY)
+    {
+        splashf(HZ * 3, "Stop playback first");
+        return false;
+    }
+
+    FOR_NB_SCREENS(i)
+        screens[i].setfont(FONT_SYSFIXED);
+
+    while (!done)
+    {
+        int btn = get_action(CONTEXT_STD, HZ / 4);
+
+        if (btn == ACTION_STD_CANCEL)
+        {
+            if (state == 1)
+                cancel = true;       /* aborts the in-flight slot */
+            else
+                done = true;
+        }
+        else if (btn == ACTION_STD_OK && state == 0)
+        {
+            state = 1;
+            FOR_NB_SCREENS(i)
+                screens[i].setfont(FONT_SYSFIXED);
+            for (cur_slot = 0;
+                 cur_slot < WF_BENCH_CORPUS_COUNT && !cancel;
+                 cur_slot++)
+            {
+                /* Live "running" frame between codecs so the user sees
+                 * the slot index advance instead of a frozen screen. */
+                FOR_NB_SCREENS(i)
+                {
+                    screens[i].clear_display();
+                    screens[i].putsf(0, 0, "WF Codec Bench");
+                    screens[i].putsf(0, 1, "running %d/%d %s",
+                                     cur_slot + 1, WF_BENCH_CORPUS_COUNT,
+                                     wf_codec_bench_label(cur_slot));
+                    screens[i].update();
+                }
+                wf_codec_bench_run_one(cur_slot, &res[cur_slot], &cancel);
+            }
+            wrote_report = (wf_codec_bench_write_report(res, cur_slot) == 0);
+            state = 2;
+        }
+
+        FOR_NB_SCREENS(i)
+        {
+            int line = 0;
+            int s;
+            screens[i].clear_display();
+            screens[i].putsf(0, line++, "WF Codec Bench");
+            if (state == 0)
+                screens[i].putsf(0, line++, "press SELECT");
+            else if (state == 2)
+                screens[i].putsf(0, line++,
+                    wrote_report ? "wrote: wf_codec_bench.txt"
+                                 : "report write FAILED");
+            else
+                screens[i].putsf(0, line++, "running %d/%d",
+                                 cur_slot + 1, WF_BENCH_CORPUS_COUNT);
+
+            for (s = 0; s < WF_BENCH_CORPUS_COUNT; s++)
+            {
+                const struct wf_bench_result *r = &res[s];
+                const char *lbl = wf_codec_bench_label(s);
+                switch (r->status)
+                {
+                    case WF_BENCH_OK:
+                        screens[i].putsf(0, line++, "%-4s %lu.%02lux %lums",
+                            lbl,
+                            (unsigned long)(r->realtime_pct_x100 / 10000),
+                            (unsigned long)((r->realtime_pct_x100 / 100) % 100),
+                            (unsigned long)r->duration_ms);
+                        break;
+                    case WF_BENCH_SKIP_NO_FILE:
+                        screens[i].putsf(0, line++, "%-4s no corpus", lbl);
+                        break;
+                    case WF_BENCH_ERR_METADATA:
+                        screens[i].putsf(0, line++, "%-4s err meta", lbl);
+                        break;
+                    case WF_BENCH_ERR_LOAD:
+                        screens[i].putsf(0, line++, "%-4s err load", lbl);
+                        break;
+                    case WF_BENCH_ERR_RUN:
+                        screens[i].putsf(0, line++, "%-4s err run", lbl);
+                        break;
+                    case WF_BENCH_ABORTED:
+                        screens[i].putsf(0, line++, "%-4s aborted", lbl);
+                        break;
+                    default:
+                        screens[i].putsf(0, line++, "%-4s -", lbl);
+                        break;
+                }
+            }
+            screens[i].update();
+        }
+    }
+
+    FOR_NB_SCREENS(i)
+        screens[i].setfont(FONT_UI);
+    return false;
+}
+#endif /* WAVEFORM_TELEMETRY_BENCH */
+
 #ifdef WAVEFORM_WFLIB
 static bool dbg_wf_lib(void)
 {
@@ -3294,6 +3420,9 @@ static const struct {
 #endif
         {"WF: Ring dump", dbg_wf_ring_dump },
 #endif /* WAVEFORM_TELEMETRY */
+#ifdef WAVEFORM_TELEMETRY_BENCH
+        {"WF: Codec Bench", dbg_wf_codec_bench },
+#endif
 #ifdef WAVEFORM_WFLIB
         {"WF: Library", dbg_wf_lib    },
 #endif
