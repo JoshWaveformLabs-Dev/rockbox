@@ -86,6 +86,7 @@ static off_t            bench_filesize;
 static off_t            bench_curr_offset;   /* file offset of bench_buffer[0] */
 static size_t           bench_curr_bufsize;  /* live bytes in bench_buffer */
 static int              bench_run_rc;        /* codec_run_proc() return, codec-thread side */
+static off_t            bench_max_curpos;    /* curpos high-water mark (advance/read/request) */
 
 /* Sliding-window file buffer. Sized to balance BSS cost (~256 KiB) against
  * rebuffer frequency. Rebuffer ticks are subtracted from decode_ticks so
@@ -208,6 +209,8 @@ static size_t bench_cb_read_filebuf(void *ptr, size_t size)
            bench_buffer + (bench_ci.curpos - bench_curr_offset),
            realsize);
     bench_ci.curpos += realsize;
+    if (bench_ci.curpos > bench_max_curpos)
+        bench_max_curpos = bench_ci.curpos;
     return realsize;
 }
 
@@ -229,6 +232,8 @@ static void *bench_cb_request_buffer(size_t *realsize, size_t reqsize)
 static void bench_cb_advance_buffer(size_t amount)
 {
     bench_ci.curpos += amount;
+    if (bench_ci.curpos > bench_max_curpos)
+        bench_max_curpos = bench_ci.curpos;
     if (bench_ci.id3)
         bench_ci.id3->offset = bench_ci.curpos;
 }
@@ -446,6 +451,7 @@ int wf_codec_bench_run_one(int slot,
     dsp_configure(bench_ci.dsp, DSP_FLUSH, 0);
 
     bench_run_rc        = 0;
+    bench_max_curpos    = 0;
     bench_codec_action  = CODEC_ACTION_NULL;
     bench_codec_playing = true;
     commit_dcache();
@@ -479,8 +485,26 @@ int wf_codec_bench_run_one(int slot,
     }
     else if (bench_run_rc < 0)
     {
-        out->status = (bench_run_rc == -1 && bench_ci.curpos == 0)
-                      ? WF_BENCH_ERR_LOAD : WF_BENCH_ERR_RUN;
+        /* Distinguish three error cases:
+         *   - Load failure: curpos never moved (codec_load_file < 0).
+         *   - Natural-EOF idiom: codec consumed the file but returned
+         *     CODEC_ERROR because its main loop only sets CODEC_OK on a
+         *     CODEC_ACTION_HALT break (libopus codec_run() does this:
+         *     `error = CODEC_ERROR; while(1){ if HALT break; ... if
+         *     get_more_data<1 goto done; } error = CODEC_OK; done: return
+         *     error;` — natural EOF reaches `done` with error still
+         *     CODEC_ERROR). test_codec.c sidesteps this by ignoring the
+         *     return value entirely; we need a tighter rule because real
+         *     mid-stream codec faults must still surface as ERR_RUN.
+         *   - Real codec fault: codec aborted before consuming the file.
+         * Threshold of 95 % of filesize tolerates the ogg page tail
+         * (≤64 KiB) without masking a codec that gave up early. */
+        if (bench_run_rc == -1 && bench_ci.curpos == 0)
+            out->status = WF_BENCH_ERR_LOAD;
+        else if (bench_max_curpos >= (bench_filesize * 95) / 100)
+            out->status = WF_BENCH_OK;
+        else
+            out->status = WF_BENCH_ERR_RUN;
     }
     else
     {
