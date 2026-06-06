@@ -389,6 +389,19 @@ int wf_codec_bench_run_one(int slot,
     }
     out->duration_ms = (uint32_t)bench_id3.length;
 
+    /* Reject oversized tracks before commandeering the codec thread —
+     * decoding a 30-minute file at 1.5x realtime would block the bench
+     * for ~20 minutes of wall-clock, which the operator inevitably
+     * mistakes for a freeze. The realtime ratio converges within the
+     * first few seconds anyway. */
+    if (bench_id3.length > WF_BENCH_MAX_DURATION_MS)
+    {
+        out->status = WF_BENCH_SKIP_TOO_LONG;
+        close(bench_fd);
+        bench_fd = -1;
+        return 0;
+    }
+
     /* Force codectype to match our corpus expectation. Some metadata
      * readers (mp4) may return AAC for an ALAC file or vice versa if the
      * underlying container doesn't unambiguously match; we trust the
@@ -500,6 +513,7 @@ static const char *bench_status_name(enum wf_bench_status s)
         case WF_BENCH_ERR_LOAD:     return "ERR_LOAD";
         case WF_BENCH_ERR_RUN:      return "ERR_RUN";
         case WF_BENCH_ABORTED:      return "ABORTED";
+        case WF_BENCH_SKIP_TOO_LONG:return "SKIP_TOO_LONG";
         default:                    return "?";
     }
 }

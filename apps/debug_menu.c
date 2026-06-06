@@ -3142,8 +3142,14 @@ static bool dbg_wf_codec_bench(void)
                     screens[i].update();
                 }
                 wf_codec_bench_run_one(cur_slot, &res[cur_slot], &cancel);
+                /* Incremental rewrite after each slot so a freeze / crash
+                 * on a later codec doesn't lose the earlier results. The
+                 * file is overwritten in full each pass — n grows from 1
+                 * up to WF_BENCH_CORPUS_COUNT. wrote_report tracks the
+                 * latest attempt; transient failures are visible at the
+                 * end only if the final write also fails. */
+                wrote_report = (wf_codec_bench_write_report(res, cur_slot + 1) == 0);
             }
-            wrote_report = (wf_codec_bench_write_report(res, cur_slot) == 0);
             state = 2;
         }
 
@@ -3190,6 +3196,9 @@ static bool dbg_wf_codec_bench(void)
                         break;
                     case WF_BENCH_ABORTED:
                         screens[i].putsf(0, line++, "%-4s aborted", lbl);
+                        break;
+                    case WF_BENCH_SKIP_TOO_LONG:
+                        screens[i].putsf(0, line++, "%-4s >90s skip", lbl);
                         break;
                     default:
                         screens[i].putsf(0, line++, "%-4s -", lbl);

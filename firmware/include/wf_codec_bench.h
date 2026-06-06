@@ -41,6 +41,12 @@
  * Missing files are sentinel-recorded as WF_BENCH_SKIP_NO_FILE; the sweep
  * never aborts because of a single missing or broken corpus entry.
  *
+ * Corpus files should be 30-60 seconds each. Longer than 60 s is wasteful
+ * (the realtime ratio is established within the first few seconds of decode)
+ * and any track whose id3.length exceeds WF_BENCH_MAX_DURATION_MS is
+ * rejected at the metadata stage with WF_BENCH_SKIP_TOO_LONG; this prevents
+ * a multi-minute decode from being mistaken for a freeze by the operator.
+ *
  * Audio MUST be stopped before calling wf_codec_bench_run_one(); the caller
  * (debug screen) is responsible for the audio_status() check. The bench
  * commandeers the codec thread via codec_thread_do_callback(), so a running
@@ -64,7 +70,14 @@ enum wf_bench_status {
     WF_BENCH_ERR_LOAD        = 3,  /* codec_load_file() < 0 */
     WF_BENCH_ERR_RUN         = 4,  /* codec_run_proc() returned CODEC_ERROR */
     WF_BENCH_ABORTED         = 5,  /* user cancelled mid-run */
+    WF_BENCH_SKIP_TOO_LONG   = 6,  /* id3.length > WF_BENCH_MAX_DURATION_MS */
 };
+
+/* Hard cap on per-track duration (90 s = 60 s recommendation + slack).
+ * Tracks longer than this are rejected with WF_BENCH_SKIP_TOO_LONG before
+ * codec_load_file() is called, so the operator never has to wait minutes
+ * for a long file to decode and mistake the wait for a freeze. */
+#define WF_BENCH_MAX_DURATION_MS 90000u
 
 struct wf_bench_result {
     uint16_t              afmt;             /* AFMT_MPA_L3, AFMT_FLAC, ... */
