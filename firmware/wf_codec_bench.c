@@ -173,6 +173,22 @@ static void bench_cb_set_elapsed(unsigned long value)
     (void)value;   /* bench doesn't render elapsed; codec UI not running */
 }
 
+/* Rebuffer if the requested span [curpos, curpos+realsize) is not fully
+ * inside the live window [curr_offset, curr_offset+curr_bufsize). Signed
+ * off_t arithmetic — the prior unsigned form silently wrapped when a
+ * codec called seek_buffer() to a position earlier than curr_offset
+ * (libm4a qtmovie_read seeking to mdat_offset; opus seek_opus_tags /
+ * seek_ogg_page seeking to 0). Wrap → "remaining" appeared huge → no
+ * rebuffer → memcpy read past bench_buffer → CODEC_ERROR. MP3 + FLAC
+ * stream forward and never tripped this. */
+static inline bool bench_window_covers(size_t realsize)
+{
+    off_t lo = bench_curr_offset;
+    off_t hi = bench_curr_offset + (off_t)bench_curr_bufsize;
+    return bench_ci.curpos >= lo &&
+           bench_ci.curpos + (off_t)realsize <= hi;
+}
+
 static size_t bench_cb_read_filebuf(void *ptr, size_t size)
 {
     size_t realsize;
@@ -182,8 +198,7 @@ static size_t bench_cb_read_filebuf(void *ptr, size_t size)
 
     realsize = MIN((size_t)(bench_filesize - bench_ci.curpos), size);
 
-    if (realsize > bench_curr_bufsize -
-                   (size_t)(bench_ci.curpos - bench_curr_offset))
+    if (!bench_window_covers(realsize))
     {
         if (bench_fill_buffer(bench_ci.curpos) < 0)
             return 0;
@@ -200,8 +215,7 @@ static void *bench_cb_request_buffer(size_t *realsize, size_t reqsize)
 {
     *realsize = MIN((size_t)(bench_filesize - bench_ci.curpos), reqsize);
 
-    if (*realsize > bench_curr_bufsize -
-                    (size_t)(bench_ci.curpos - bench_curr_offset))
+    if (!bench_window_covers(*realsize))
     {
         if (bench_fill_buffer(bench_ci.curpos) < 0)
         {
