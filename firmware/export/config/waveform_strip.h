@@ -39,3 +39,9 @@
 #define WAVEFORM_NO_CROSSFADE  /* m8: crossfade stripped (consumed by config.h:1082) */
 #define WAVEFORM_STRIP_CODECS  /* m9: codec set trimmed to MP3/AAC/FLAC/ALAC/Opus */
 #define WAVEFORM_WFLIB         /* stage 3: compact library index reader */
+/* Stage 6.3 D4: in-firmware codec benchmark callable from WF: debug menu.
+ * Replaces the test_codec plugin dependency so production firmware (with
+ * HAVE_ROCKBOX_PLUGINS undef'd) can self-benchmark per-codec realtime
+ * ratios. Adds ~256 KiB BSS for the bench file buffer and a debug-menu
+ * entry; runtime cost zero unless the user opens the screen. */
+#define WAVEFORM_TELEMETRY_BENCH

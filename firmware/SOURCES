@@ -14,6 +14,9 @@ general.c
 #ifdef WAVEFORM_TELEMETRY
 wf_telemetry.c
 #endif
+#ifdef WAVEFORM_TELEMETRY_BENCH
+wf_codec_bench.c
+#endif
 #ifdef WAVEFORM_WFLIB
 common/wf_lib_reader.c
 #endif
