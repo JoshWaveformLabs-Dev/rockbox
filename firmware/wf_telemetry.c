@@ -218,6 +218,13 @@ void wf_buflib_note_alloc(const char *tag, size_t size)
         wf_buflib_state.last_total_free = 0;
     cached_free = wf_buflib_state.last_total_free;
     first_sight = wf_tag_cache_observe_locked(hash);
+#ifdef WAVEFORM_TELEMETRY_DISPLAY
+    /* S7-D4: WPS-redraw alloc canary. Counter-only side effect; matches
+     * the redraw thread via wf_wps_redraw_tid snapshot taken at
+     * REDRAW_BEGIN. Reads volatile state set under this same IRQ save in
+     * wf_display_redraw_begin/end so no torn tid is possible. */
+    wf_display_note_alloc_during_redraw();
+#endif
     restore_irq(irq);
 
     if (first_sight) {
@@ -721,8 +728,28 @@ void wf_storage_counters_get(struct wf_storage_counters *out)
 
 /* File-scope accumulator. Single producer in steady state (WPS thread
  * between REDRAW_BEGIN and REDRAW_END), single consumer (debug-menu screen
- * polling at HZ/2 from the menu thread). 28 bytes of BSS. */
+ * polling at HZ/2 from the menu thread). */
 static struct wf_display_frame_t wf_display_frame;
+
+/* S7-D4: WPS-redraw window markers.
+ *   wf_in_wps_redraw  — 1 while a REDRAW_BEGIN/END pair is open.
+ *   wf_wps_redraw_tid — thread_self_slot() snapshot at REDRAW_BEGIN.
+ *                       Used by the buflib alloc canary to restrict the
+ *                       attribution to the actual WPS thread (audio /
+ *                       buffering threads may race through alloc paths
+ *                       while a redraw is in flight).
+ *   wf_last_redraw_ticks — most recent REDRAW_END elapsed, stashed for
+ *                          the WF: Display debug screen so it can show
+ *                          the live redraw ms without ring decode.
+ *
+ * Volatile on the first two so the buflib hook on any thread sees the
+ * latest value; the BEGIN/END writes run under disable_irq_save() and
+ * the canary reader is called from inside an IRQ-save CS owned by
+ * wf_buflib_note_alloc — that pair gives the ordering guarantee on
+ * uniprocessor PP502x without an explicit membarrier. */
+static volatile uint8_t  wf_in_wps_redraw;
+static volatile uint16_t wf_wps_redraw_tid;
+static uint32_t          wf_last_redraw_ticks;
 
 void wf_display_frame_reset(void)
 {
@@ -742,6 +769,53 @@ void wf_display_frame_note_dirty(uint32_t pixels)
 void wf_display_frame_note_glyph(void)
 {
     wf_display_frame.glyphs_rasterised += 1;
+}
+
+void wf_display_frame_note_glyph_miss(void)
+{
+    /* S7-D4: bump BOTH so the rasterised total stays correct and the
+     * MISS sub-count is independently readable from the debug screen. */
+    wf_display_frame.glyphs_rasterised += 1;
+    wf_display_frame.glyphs_missed     += 1;
+}
+
+void wf_display_redraw_begin(void)
+{
+    unsigned int slot = thread_self_slot();
+    int irq = disable_irq_save();
+    wf_wps_redraw_tid = (slot < MAXTHREADS) ? (uint16_t)slot : 0;
+    wf_in_wps_redraw  = 1;
+    restore_irq(irq);
+}
+
+void wf_display_redraw_end(uint32_t elapsed_ticks)
+{
+    int irq = disable_irq_save();
+    wf_last_redraw_ticks = elapsed_ticks;
+    wf_in_wps_redraw     = 0;
+    restore_irq(irq);
+}
+
+uint32_t wf_display_last_redraw_ticks(void)
+{
+    return wf_last_redraw_ticks;
+}
+
+void wf_display_note_alloc_during_redraw(void)
+{
+    /* CALLER-SAFETY CONTRACT: invoked from inside wf_buflib_note_alloc()'s
+     * existing disable_irq_save() critical section. This function does NOT
+     * take its own IRQ save — taking one here would nest disable_irq_save
+     * harmlessly but pointlessly. Keep the body minimal so the buflib CS
+     * stays short. */
+    if (!wf_in_wps_redraw)
+        return;
+    unsigned int slot = thread_self_slot();
+    if (slot >= MAXTHREADS)
+        return;
+    if ((uint16_t)slot != wf_wps_redraw_tid)
+        return;
+    wf_display_frame.alloc_count_during_redraw += 1;
 }
 
 #endif /* WAVEFORM_TELEMETRY_DISPLAY */
