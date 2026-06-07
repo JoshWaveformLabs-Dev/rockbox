@@ -716,4 +716,24 @@ void wf_storage_counters_get(struct wf_storage_counters *out)
 
 #endif /* WAVEFORM_TELEMETRY_STORAGE */
 
+/* ----- S7-D1: display subsystem --------------------------------------- */
+#ifdef WAVEFORM_TELEMETRY_DISPLAY
+
+/* File-scope accumulator. Single producer in steady state (WPS thread
+ * between REDRAW_BEGIN and REDRAW_END), single consumer (debug-menu screen
+ * polling at HZ/2 from the menu thread). 28 bytes of BSS. */
+static struct wf_display_frame_t wf_display_frame;
+
+void wf_display_frame_reset(void)
+{
+    memset(&wf_display_frame, 0, sizeof wf_display_frame);
+}
+
+void wf_display_frame_get(struct wf_display_frame_t *out)
+{
+    *out = wf_display_frame;
+}
+
+#endif /* WAVEFORM_TELEMETRY_DISPLAY */
+
 #endif /* WAVEFORM_TELEMETRY */

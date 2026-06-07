@@ -43,6 +43,7 @@ enum {
     WF_SUB_STACK    = 5,
     WF_SUB_MEMORY   = 6,  /* reserved for host-only alloc shim; firmware adoption deferred */
     WF_SUB_THREAD   = 7,  /* one-shot thread_id -> name map events */
+    WF_SUB_DISPLAY  = 8,  /* S7-D1: WPS redraw / LCD update / glyph cache events */
     WF_SUB__COUNT
 };
 
@@ -80,7 +81,16 @@ enum {
     WF_EVT_STACK_OVERRUN = 0x0500,
     WF_EVT_STACK_LOW     = 0x0501, /* min-remaining dropped below prior floor */
 
-    WF_EVT_THREAD_NAME   = 0x0700  /* one-shot: thread_id -> name for offline decode */
+    WF_EVT_THREAD_NAME   = 0x0700, /* one-shot: thread_id -> name for offline decode */
+
+    /* S7-D1: display subsystem. High-byte matches WF_SUB_DISPLAY = 8 per the
+     * convention at the head of this enum block. */
+    WF_EVT_DISPLAY_REDRAW_BEGIN = 0x0800,
+    WF_EVT_DISPLAY_REDRAW_END   = 0x0801,
+    WF_EVT_DISPLAY_LCD_BEGIN    = 0x0802,
+    WF_EVT_DISPLAY_LCD_END      = 0x0803,
+    WF_EVT_DISPLAY_GLYPH_HIT    = 0x0804,
+    WF_EVT_DISPLAY_GLYPH_MISS   = 0x0805
 };
 
 /* 28-byte event record. The fields are deliberately untyped past (sub,evt) —
@@ -345,6 +355,39 @@ void wf_storage_note_write_end(int drive, uint64_t start, int count, int rc);
 void wf_storage_counters_get(struct wf_storage_counters *out);
 
 #endif /* WAVEFORM_TELEMETRY_STORAGE */
+
+/* ----- S7-D1: display subsystem --------------------------------------- */
+#ifdef WAVEFORM_TELEMETRY_DISPLAY
+
+/* Per-frame accumulator. Reset at WF_EVT_DISPLAY_REDRAW_BEGIN; sampled at
+ * WF_EVT_DISPLAY_REDRAW_END. glyphs_rasterised counts every glyph drawn
+ * during the redraw window (font_cache HIT + MISS both increment); the
+ * MISS sub-count rides the WF_EVT_DISPLAY_GLYPH_MISS event payload.
+ * dirty_area_pixels accumulates viewport width*height for every dirty
+ * viewport touched during the redraw — used as the "union dirty area"
+ * baseline for WSE2 dirty-rect sizing. alloc_count_during_redraw is
+ * bumped by the buflib alloc hook when wf_in_wps_redraw is set
+ * (D4 wires this — the field exists at D1 for declaration stability).
+ * redraw_begin_tick is set on REDRAW_BEGIN so REDRAW_END can compute
+ * elapsed without polling current_tick a second time. */
+struct wf_display_frame_t {
+    uint32_t glyphs_rasterised;
+    uint32_t dirty_area_pixels;
+    uint32_t alloc_count_during_redraw;
+    uint32_t redraw_begin_tick;
+};
+
+/* Zero all fields. Called at REDRAW_BEGIN. Safe from the WPS thread; no
+ * concurrent writers in steady state. */
+void wf_display_frame_reset(void);
+
+/* Snapshot for the debug-menu screen (D4 wires this into WF: Display).
+ * Single-word copies; the writer is the WPS thread between REDRAW_BEGIN
+ * and REDRAW_END, the reader is the menu thread at HZ/2 poll rate — no
+ * irq-save needed for a counter snapshot. */
+void wf_display_frame_get(struct wf_display_frame_t *out);
+
+#endif /* WAVEFORM_TELEMETRY_DISPLAY */
 
 #endif /* WAVEFORM_TELEMETRY */
 
