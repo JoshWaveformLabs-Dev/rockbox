@@ -739,6 +739,11 @@ void wf_display_frame_note_dirty(uint32_t pixels)
     wf_display_frame.dirty_area_pixels += pixels;
 }
 
+void wf_display_frame_note_glyph(void)
+{
+    wf_display_frame.glyphs_rasterised += 1;
+}
+
 #endif /* WAVEFORM_TELEMETRY_DISPLAY */
 
 #endif /* WAVEFORM_TELEMETRY */

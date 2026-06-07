@@ -21,6 +21,7 @@
 #include <string.h>
 #include "font_cache.h"
 #include "debug.h"
+#include "wf_telemetry.h"
 
 /*******************************************************************************
  * font_cache_lru_init
@@ -158,6 +159,15 @@ struct font_cache_entry* font_cache_get(
                 if (p->_char_code == char_code)
                 {
                     lru_touch(&fcache->_lru, lru_handle);
+#ifdef WAVEFORM_TELEMETRY_DISPLAY
+                    /* S7-D3: glyph cache hit. char_code is the unicode
+                     * codepoint; field b/c/d unused (the per-frame counter
+                     * bumped below is the rolled-up metric). */
+                    wf_event_record(WF_SUB_DISPLAY,
+                                    WF_EVT_DISPLAY_GLYPH_HIT,
+                                    (uint32_t)char_code, 0, 0, 0);
+                    wf_display_frame_note_glyph();
+#endif
                     return lru_data(&fcache->_lru, lru_handle);
                 }
             }

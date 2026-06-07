@@ -43,6 +43,7 @@
 #include "rbunicode.h"
 #include "diacritic.h"
 #include "rbpaths.h"
+#include "wf_telemetry.h"
 
 /* Define LOGF_ENABLE to enable logf output in this file */
 //#define LOGF_ENABLE
@@ -736,6 +737,17 @@ static void
 load_cache_entry(struct font_cache_entry* p, void* callback_data)
 {
     struct font* pf = callback_data;
+#ifdef WAVEFORM_TELEMETRY_DISPLAY
+    /* S7-D3: glyph cache miss — the renderer asked for a glyph not in
+     * cache so we are about to read it from the font file. Payload:
+     * a=char_code, b=cache_capacity (in entries), c=font buflib handle
+     * (opaque font id; serialises 1:1 with apps/gui/font.c slot). */
+    wf_event_record(WF_SUB_DISPLAY, WF_EVT_DISPLAY_GLYPH_MISS,
+                    (uint32_t)p->_char_code,
+                    (uint32_t)pf->cache._capacity,
+                    (uint32_t)pf->handle, 0);
+    wf_display_frame_note_glyph();
+#endif
 
     ucschar_t char_code = p->_char_code;
     int fd;

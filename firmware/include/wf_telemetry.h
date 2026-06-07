@@ -392,6 +392,13 @@ void wf_display_frame_get(struct wf_display_frame_t *out);
  * at WF_EVT_DISPLAY_REDRAW_END and shipped as event payload field b. */
 void wf_display_frame_note_dirty(uint32_t pixels);
 
+/* S7-D3: per-glyph rasterisation notification. Called once per
+ * font_cache_get() hit AND once per load_cache_entry() miss — both paths
+ * are "a glyph was supplied to the renderer". Sum read at REDRAW_END as
+ * field c. MISS sub-count is recoverable from the WF_EVT_DISPLAY_GLYPH_MISS
+ * event stream (no separate counter needed). */
+void wf_display_frame_note_glyph(void);
+
 #endif /* WAVEFORM_TELEMETRY_DISPLAY */
 
 #endif /* WAVEFORM_TELEMETRY */
