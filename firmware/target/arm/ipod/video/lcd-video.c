@@ -31,6 +31,7 @@
 #include "cpu.h"
 #include "lcd.h"
 #include "kernel.h"
+#include "wf_telemetry.h"
 #include "system.h"
 #ifdef HAVE_LCD_SLEEP
 /* Included only for lcd_awake() prototype */
@@ -407,6 +408,17 @@ void lcd_update_rect(int x, int y, int width, int height)
     width = (width + (x & 1) + 1) & ~1;
     x &= ~1;
 
+#ifdef WAVEFORM_TELEMETRY_DISPLAY
+    /* S7-D2: BCM write window. BEGIN is placed after the early-return checks
+     * + alignment normalisation so the recorded (x, y, width, height) reflect
+     * what is actually pushed to the BCM (post-clip, post-align). Paired with
+     * LCD_END immediately after lcd_unblock_and_update(). */
+    long wf_lcd_begin_tick = current_tick;
+    wf_event_record(WF_SUB_DISPLAY, WF_EVT_DISPLAY_LCD_BEGIN,
+                    (uint32_t)x, (uint32_t)y,
+                    (uint32_t)width, (uint32_t)height);
+#endif
+
     /* Prevent the tick from triggering BCM updates while we're writing. */
     lcd_block_tick();
 
@@ -430,6 +442,11 @@ void lcd_update_rect(int x, int y, int width, int height)
         while (--height > 0);
     }
     lcd_unblock_and_update();
+#ifdef WAVEFORM_TELEMETRY_DISPLAY
+    wf_event_record(WF_SUB_DISPLAY, WF_EVT_DISPLAY_LCD_END,
+                    (uint32_t)(current_tick - wf_lcd_begin_tick),
+                    0, 0, 0);
+#endif
 }
 
 /* Update the display.

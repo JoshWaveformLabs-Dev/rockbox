@@ -387,6 +387,11 @@ void wf_display_frame_reset(void);
  * irq-save needed for a counter snapshot. */
 void wf_display_frame_get(struct wf_display_frame_t *out);
 
+/* S7-D2: per-viewport dirty-area notification. Called from
+ * skin_render_viewport() once per rendered viewport; the sum is read out
+ * at WF_EVT_DISPLAY_REDRAW_END and shipped as event payload field b. */
+void wf_display_frame_note_dirty(uint32_t pixels);
+
 #endif /* WAVEFORM_TELEMETRY_DISPLAY */
 
 #endif /* WAVEFORM_TELEMETRY */

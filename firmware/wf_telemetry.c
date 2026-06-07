@@ -734,6 +734,11 @@ void wf_display_frame_get(struct wf_display_frame_t *out)
     *out = wf_display_frame;
 }
 
+void wf_display_frame_note_dirty(uint32_t pixels)
+{
+    wf_display_frame.dirty_area_pixels += pixels;
+}
+
 #endif /* WAVEFORM_TELEMETRY_DISPLAY */
 
 #endif /* WAVEFORM_TELEMETRY */

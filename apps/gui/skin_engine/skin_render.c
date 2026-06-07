@@ -28,6 +28,7 @@
 #include "config.h"
 #include "core_alloc.h"
 #include "kernel.h"
+#include "wf_telemetry.h"
 #include "appevents.h"
 #ifdef HAVE_ALBUMART
 #include "albumart.h"
@@ -764,6 +765,13 @@ void skin_render_viewport(struct skin_element* viewport, struct gui_wps *gwps,
 
     struct align_pos * align = &info.align;
     bool needs_update, update_all = false;
+#ifdef WAVEFORM_TELEMETRY_DISPLAY
+    /* S7-D2: accumulate this viewport's pixel area into the per-frame
+     * dirty_area_pixels counter. Read out at WF_EVT_DISPLAY_REDRAW_END
+     * as the "union dirty area" baseline for WSE2 dirty-rect sizing. */
+    wf_display_frame_note_dirty((uint32_t)skin_viewport->vp.width
+                                * (uint32_t)skin_viewport->vp.height);
+#endif
     skin_buffer = get_skin_buffer(gwps->data);
     /* Set images to not to be displayed */
     struct skin_token_list *imglist = SKINOFFSETTOPTR(skin_buffer, gwps->data->images);
@@ -852,6 +860,16 @@ void skin_render(struct gui_wps *gwps, unsigned refresh_mode)
     char *label;
 
     int old_refresh_mode = refresh_mode;
+#ifdef WAVEFORM_TELEMETRY_DISPLAY
+    /* S7-D2: open the redraw window. Reset the per-frame accumulator
+     * (dirty_area_pixels / glyphs_rasterised / alloc_count_during_redraw)
+     * so this frame's sums start clean; emit BEGIN with the caller-supplied
+     * refresh_mode. End event closes the window after display->update(). */
+    long wf_redraw_begin_tick = current_tick;
+    wf_display_frame_reset();
+    wf_event_record(WF_SUB_DISPLAY, WF_EVT_DISPLAY_REDRAW_BEGIN,
+                    (uint32_t)refresh_mode, 0, 0, 0);
+#endif
     skin_buffer = get_skin_buffer(gwps->data);
 
     /* Framebuffer is likely dirty */
@@ -941,6 +959,20 @@ void skin_render(struct gui_wps *gwps, unsigned refresh_mode)
     /* Restore the default viewport */
     display->set_viewport_ex(NULL, VP_FLAG_VP_SET_CLEAN);
     display->update();
+#ifdef WAVEFORM_TELEMETRY_DISPLAY
+    /* S7-D2: close the redraw window. Elapsed ticks measured from the
+     * BEGIN stamp; remaining payload fields read the per-frame accumulator
+     * populated by the viewport hook above + (D3) the glyph cache hooks. */
+    {
+        struct wf_display_frame_t wf_f;
+        wf_display_frame_get(&wf_f);
+        wf_event_record(WF_SUB_DISPLAY, WF_EVT_DISPLAY_REDRAW_END,
+                        (uint32_t)(current_tick - wf_redraw_begin_tick),
+                        wf_f.dirty_area_pixels,
+                        wf_f.glyphs_rasterised,
+                        wf_f.alloc_count_during_redraw);
+    }
+#endif
 }
 
 static __attribute__((noinline))
