@@ -105,6 +105,11 @@ struct
 #if NUM_CORES > 1
     struct corelock cl;   /* inter-core sync */
 #endif
+#ifndef BOOTLOADER
+    /* S7-D4-fu3: serialises concurrent lcd_update_rect callers so the
+     * yield-drain there cannot let a peer race host writes. */
+    struct mutex lcd_thread_mutex;
+#endif
 #ifdef HAVE_LCD_SLEEP
     bool display_on;
     bool waking;
@@ -348,6 +353,7 @@ void lcd_init_device(void)
 #if NUM_CORES > 1
     corelock_init(&lcd_state.cl);
 #endif
+    mutex_init(&lcd_state.lcd_thread_mutex);  /* S7-D4-fu3 */
 #ifdef HAVE_LCD_SLEEP
     if (!flash_get_section(ROM_ID('v', 'm', 'c', 's'),
                            (void **)(&flash_vmcs_offset), &flash_vmcs_length))
@@ -408,39 +414,35 @@ void lcd_update_rect(int x, int y, int width, int height)
     width = (width + (x & 1) + 1) & ~1;
     x &= ~1;
 
+#ifndef BOOTLOADER
+    /* S7-D4-fu3: serialise concurrent same-priority lcd_update_rect
+     * callers (UI thread vs scroll_thread). Required because the
+     * yield-drain below would otherwise allow a peer to enter while we
+     * hold lcd_block_tick (idempotent flag, not a thread mutex) and
+     * race host writes into BCMA_CMDPARAM. lcd_tick stays gated by
+     * lcd_state.blocked. */
+    mutex_lock(&lcd_state.lcd_thread_mutex);
+#endif
+
     /* Prevent the tick from triggering BCM updates while we're writing. */
     lcd_block_tick();
 
-    /* S7-D4-fu2: drain any in-flight BCM panel-push before overwriting
-     * the internal FB at BCMA_CMDPARAM. The BCM panel-push DMA reads
-     * BCMA_CMDPARAM concurrently with host writes through
-     * BCM_WR_ADDR + BCM_DATA32; without a drain, host pixels staged
-     * after a prior BCMCMD_LCD_UPDATE kick can land in y-rows the
-     * DMA has not yet read, producing horizontal-band tears at the
-     * rect's y-range. Visible on iPod 5.5g hardware as upper-band
-     * tearing under burst-rate partial updates (e.g. WPS title/time/
-     * name viewport scroll firing inside a full-frame lcd_update push).
-     * The S7-D4-fu bracket fix closed the lcd_tick IRQ-side race; this
-     * closes the host-vs-BCM-DMA race.
-     *
-     * Pure spin (no yield): lcd_block_tick is not a thread mutex.
-     * Yielding here would let a second thread enter lcd_update_rect,
-     * call lcd_block_tick (idempotent), and stage concurrent host
-     * writes to BCMA_CMDPARAM. Watchdog uses lcd_state.update_timeout
-     * to bail on BCM stall, mirroring the lcd_tick stall path. */
+    /* S7-D4-fu3: yield-poll for in-flight BCM panel push to complete
+     * before host writes -- Race A fix. Yield (not tight spin) prevents
+     * BCM bus starvation that corrupts the in-flight scan-out (fu2
+     * regression). The new lcd_thread_mutex serialises concurrent
+     * lcd_update_rect calls under yield. lcd_tick remains gated by
+     * lcd_state.blocked. Watchdog mirrors lcd_tick's stall-recovery. */
     {
         unsigned data;
         long deadline = lcd_state.update_timeout;
-        while (1)
+        while (TIME_BEFORE(current_tick, deadline))
         {
             data = bcm_read32(BCMA_COMMAND);
             if (data != BCMCMD_LCD_UPDATE && data != 0xFFFF)
                 break;
-            if (TIME_AFTER(current_tick, deadline))
-                break;  /* BCM stalled -- bail and write anyway. */
+            yield();
         }
-        if (lcd_state.state == LCD_UPDATING)
-            lcd_state.state = LCD_IDLE;
     }
 
 #ifdef WAVEFORM_TELEMETRY_DISPLAY
@@ -488,6 +490,10 @@ void lcd_update_rect(int x, int y, int width, int height)
                     0, 0, 0);
 #endif
     lcd_unblock_and_update();
+
+#ifndef BOOTLOADER
+    mutex_unlock(&lcd_state.lcd_thread_mutex);  /* S7-D4-fu3 */
+#endif
 }
 
 /* Update the display.
