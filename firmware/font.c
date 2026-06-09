@@ -854,6 +854,9 @@ int font_get_width(struct font* pf, ucschar_t char_code)
 const unsigned char* font_get_bits(struct font* pf, ucschar_t char_code)
 {
     const unsigned char* bits;
+#ifdef WAVEFORM_TELEMETRY_DISPLAY
+    bool check_oob = false;
+#endif
 
     /* check input range*/
     if (char_code < pf->firstchar || char_code >= pf->firstchar+pf->size)
@@ -865,6 +868,9 @@ const unsigned char* font_get_bits(struct font* pf, ucschar_t char_code)
         bits =
             (unsigned char*)font_cache_get(&pf->cache, char_code,
                                 false, load_cache_entry, pf)->bitmap;
+#ifdef WAVEFORM_TELEMETRY_DISPLAY
+        check_oob = true;
+#endif
     }
     else if (pf->disabled)
     {
@@ -882,6 +888,9 @@ const unsigned char* font_get_bits(struct font* pf, ucschar_t char_code)
              * reserved by cache_create() at buffer_start */
             bits = pf->buffer_start;
         }
+#ifdef WAVEFORM_TELEMETRY_DISPLAY
+        check_oob = true;
+#endif
     }
     else
     {
@@ -897,6 +906,17 @@ const unsigned char* font_get_bits(struct font* pf, ucschar_t char_code)
         else
             bits += char_code * glyph_bytes(pf, pf->maxwidth);
     }
+
+#ifdef WAVEFORM_TELEMETRY_DISPLAY
+    /* S7-D4-fu-diag: verify the bitmap pointer falls inside the font's
+     * buflib region. The text-render loop in lcd-bitmap-common.c holds
+     * font_lock(vp->font, true) across font_get_bits + bmp_part_fn, so
+     * the font allocation MUST NOT move underneath us. A non-zero
+     * counter proves the pin contract is being violated. */
+    if (check_oob && pf->buffer_start && pf->buffer_end &&
+        (bits < pf->buffer_start || bits >= pf->buffer_end))
+        wf_display_frame_note_font_oob();
+#endif
 
     return bits;
 }

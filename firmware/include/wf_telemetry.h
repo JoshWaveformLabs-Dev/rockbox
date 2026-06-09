@@ -378,6 +378,12 @@ struct wf_display_frame_t {
     uint32_t dirty_area_pixels;
     uint32_t alloc_count_during_redraw;
     uint32_t redraw_begin_tick;
+    /* S7-D4-fu-diag: bitmap-pointer canary for font_get_bits. Increments
+     * when the pointer returned by font_cache_get falls outside the
+     * font's [buffer_start, buffer_end) buflib region. A non-zero value
+     * proves the font cache region is being relocated despite the
+     * font_lock pin held by the text-render loop (lcd-bitmap-common.c). */
+    uint32_t font_bits_oob_count;
 };
 
 /* Zero all fields. Called at REDRAW_BEGIN. Safe from the WPS thread; no
@@ -421,6 +427,12 @@ void wf_display_frame_note_glyph_miss(void);
 void wf_display_redraw_begin(void);
 void wf_display_redraw_end(uint32_t elapsed_ticks);
 uint32_t wf_display_last_redraw_ticks(void);
+
+/* S7-D4-fu-diag: font bitmap-pointer OOB notification. Called from
+ * font_get_bits() when the pointer returned by font_cache_get falls
+ * outside the font's [buffer_start, buffer_end). Counter-only, no
+ * wf_event_record. Surfaced live on the WF: Display debug screen. */
+void wf_display_frame_note_font_oob(void);
 
 /* S7-D4: WPS-redraw alloc canary. Called from wf_buflib_note_alloc()'s
  * existing disable_irq_save() critical section — the hook itself does NOT

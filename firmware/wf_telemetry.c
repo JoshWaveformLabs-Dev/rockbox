@@ -745,8 +745,17 @@ static struct wf_display_frame_t wf_display_frame;
  * Volatile on the first two so the buflib hook on any thread sees the
  * latest value; the BEGIN/END writes run under disable_irq_save() and
  * the canary reader is called from inside an IRQ-save CS owned by
- * wf_buflib_note_alloc — that pair gives the ordering guarantee on
- * uniprocessor PP502x without an explicit membarrier. */
+ * wf_buflib_note_alloc.
+ *
+ * S7-D4-fu correctness note: PP5022 IS dual-core (NUM_CORES == 2 per
+ * firmware/export/config.h with CPU_PP + !FORCE_SINGLE_CORE). All
+ * current buflib_alloc callers run on CPU via IF_COP(, CPU) — the
+ * audio_thread, buffering_thread, codec_thread, voice_thread and
+ * tagcache thread are all CPU-pinned. No COP-side reader of these
+ * flags exists, so a plain volatile + IRQ-save pair is sufficient
+ * TODAY. If a future codec or thread is ever moved to COP, this
+ * needs an explicit membarrier() between the volatile store and any
+ * cross-core reader; flagged here so the next caller knows. */
 static volatile uint8_t  wf_in_wps_redraw;
 static volatile uint16_t wf_wps_redraw_tid;
 static uint32_t          wf_last_redraw_ticks;
@@ -799,6 +808,16 @@ void wf_display_redraw_end(uint32_t elapsed_ticks)
 uint32_t wf_display_last_redraw_ticks(void)
 {
     return wf_last_redraw_ticks;
+}
+
+void wf_display_frame_note_font_oob(void)
+{
+    /* S7-D4-fu-diag: font_get_bits returned a bitmap pointer outside the
+     * font's [buffer_start, buffer_end) buflib region. Single 32-bit
+     * increment; mirrors the contract of wf_display_frame_note_glyph()
+     * (no IRQ-save needed for a diagnostic non-zero check — torn writes
+     * are acceptable for "did this ever happen?"). */
+    wf_display_frame.font_bits_oob_count += 1;
 }
 
 void wf_display_note_alloc_during_redraw(void)

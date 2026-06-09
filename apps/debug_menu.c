@@ -3098,6 +3098,12 @@ static bool dbg_wf_display(void)
                              (unsigned long)miss);
             screens[i].putsf(0, line++, "wpsAlloc:%lu",
                              (unsigned long)f.alloc_count_during_redraw);
+            /* S7-D4-fu-diag: font bitmap-pointer OOB count. Non-zero
+             * means font_cache_get returned a pointer outside the
+             * font's buflib region while the render loop's font_lock
+             * pin was supposed to be holding the allocation in place. */
+            screens[i].putsf(0, line++, "fontOOB:%lu",
+                             (unsigned long)f.font_bits_oob_count);
             if (cpu_hz > 0)
                 screens[i].putsf(0, line++, "cpuMHz:%lu",
                                  (unsigned long)(cpu_hz / 1000000));
