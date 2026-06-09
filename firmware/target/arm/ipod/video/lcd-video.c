@@ -411,6 +411,38 @@ void lcd_update_rect(int x, int y, int width, int height)
     /* Prevent the tick from triggering BCM updates while we're writing. */
     lcd_block_tick();
 
+    /* S7-D4-fu2: drain any in-flight BCM panel-push before overwriting
+     * the internal FB at BCMA_CMDPARAM. The BCM panel-push DMA reads
+     * BCMA_CMDPARAM concurrently with host writes through
+     * BCM_WR_ADDR + BCM_DATA32; without a drain, host pixels staged
+     * after a prior BCMCMD_LCD_UPDATE kick can land in y-rows the
+     * DMA has not yet read, producing horizontal-band tears at the
+     * rect's y-range. Visible on iPod 5.5g hardware as upper-band
+     * tearing under burst-rate partial updates (e.g. WPS title/time/
+     * name viewport scroll firing inside a full-frame lcd_update push).
+     * The S7-D4-fu bracket fix closed the lcd_tick IRQ-side race; this
+     * closes the host-vs-BCM-DMA race.
+     *
+     * Pure spin (no yield): lcd_block_tick is not a thread mutex.
+     * Yielding here would let a second thread enter lcd_update_rect,
+     * call lcd_block_tick (idempotent), and stage concurrent host
+     * writes to BCMA_CMDPARAM. Watchdog uses lcd_state.update_timeout
+     * to bail on BCM stall, mirroring the lcd_tick stall path. */
+    {
+        unsigned data;
+        long deadline = lcd_state.update_timeout;
+        while (1)
+        {
+            data = bcm_read32(BCMA_COMMAND);
+            if (data != BCMCMD_LCD_UPDATE && data != 0xFFFF)
+                break;
+            if (TIME_AFTER(current_tick, deadline))
+                break;  /* BCM stalled -- bail and write anyway. */
+        }
+        if (lcd_state.state == LCD_UPDATING)
+            lcd_state.state = LCD_IDLE;
+    }
+
 #ifdef WAVEFORM_TELEMETRY_DISPLAY
     /* S7-D4-fu: BCM write window bracketed INSIDE the lcd_state.blocked=true
      * region. Previous (S7-D2) placement put LCD_BEGIN above lcd_block_tick(),
