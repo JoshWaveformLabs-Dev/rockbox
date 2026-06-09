@@ -427,21 +427,29 @@ void lcd_update_rect(int x, int y, int width, int height)
     /* Prevent the tick from triggering BCM updates while we're writing. */
     lcd_block_tick();
 
-    /* S7-D4-fu3: yield-poll for in-flight BCM panel push to complete
-     * before host writes -- Race A fix. Yield (not tight spin) prevents
-     * BCM bus starvation that corrupts the in-flight scan-out (fu2
-     * regression). The new lcd_thread_mutex serialises concurrent
-     * lcd_update_rect calls under yield. lcd_tick remains gated by
-     * lcd_state.blocked. Watchdog mirrors lcd_tick's stall-recovery. */
+    /* S7-D4-fu4: gate host writes on BCM register reporting idle.
+     * The watchdog is from-drain-entry, not the stale
+     * lcd_state.update_timeout left by the previous lcd_tick kick.
+     * Under codec-preempted scheduling (codec at PRIORITY_PLAYBACK_MAX
+     * preempts UI at PRIORITY_USER_INTERFACE) the stale deadline could
+     * already be in the past on first read -- fu3 then skipped the
+     * drain entirely (TIME_BEFORE false on loop entry) and raced host
+     * writes against an in-flight panel-push DMA, corrupting every
+     * screen the moment playback started. Watchdog here is a last-
+     * resort stall guard, not the normal exit. sleep(0) instead of
+     * yield(): cooperative park to end of current tick, no tight spin
+     * and no pathological re-entry storm under quiet load. */
     {
         unsigned data;
-        long deadline = lcd_state.update_timeout;
-        while (TIME_BEFORE(current_tick, deadline))
+        long watchdog = current_tick + (HZ / 10);  /* 100 ms */
+        while (1)
         {
             data = bcm_read32(BCMA_COMMAND);
             if (data != BCMCMD_LCD_UPDATE && data != 0xFFFF)
-                break;
-            yield();
+                break;  /* BCM idle -- normal exit */
+            if (TIME_AFTER(current_tick, watchdog))
+                break;  /* BCM stalled > 100 ms -- last-resort exit */
+            sleep(0);
         }
     }
 
