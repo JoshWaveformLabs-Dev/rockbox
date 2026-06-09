@@ -408,19 +408,28 @@ void lcd_update_rect(int x, int y, int width, int height)
     width = (width + (x & 1) + 1) & ~1;
     x &= ~1;
 
+    /* Prevent the tick from triggering BCM updates while we're writing. */
+    lcd_block_tick();
+
 #ifdef WAVEFORM_TELEMETRY_DISPLAY
-    /* S7-D2: BCM write window. BEGIN is placed after the early-return checks
-     * + alignment normalisation so the recorded (x, y, width, height) reflect
-     * what is actually pushed to the BCM (post-clip, post-align). Paired with
-     * LCD_END immediately after lcd_unblock_and_update(). */
+    /* S7-D4-fu: BCM write window bracketed INSIDE the lcd_state.blocked=true
+     * region. Previous (S7-D2) placement put LCD_BEGIN above lcd_block_tick(),
+     * which created an IRQ-enabled / blocked=false window between
+     * wf_event_record's restore_irq and lcd_block_tick's disable_irq_save.
+     * Under burst-rate lcd_update_rect (text scrolling), the prior rect
+     * deferred its panel kick via state=LCD_NEED_UPDATE, and lcd_tick firing
+     * inside that window would write BCMCMD_LCD_UPDATE — kicking the panel
+     * push of BCM's internal FB while the next host write was about to
+     * begin. The rect-overlap region tore. Moving LCD_BEGIN below
+     * lcd_block_tick (and LCD_END above lcd_unblock_and_update) makes
+     * lcd_tick take its early-return branch (corelock + !blocked check)
+     * for the entire BCM write window. Recorded duration is now BCM
+     * writes proper — semantically tighter for the diagnostic. */
     long wf_lcd_begin_tick = current_tick;
     wf_event_record(WF_SUB_DISPLAY, WF_EVT_DISPLAY_LCD_BEGIN,
                     (uint32_t)x, (uint32_t)y,
                     (uint32_t)width, (uint32_t)height);
 #endif
-
-    /* Prevent the tick from triggering BCM updates while we're writing. */
-    lcd_block_tick();
 
     addr = FBADDR(x, y);
     bcmaddr = BCMA_CMDPARAM + (LCD_WIDTH*2) * y + (x << 1);
@@ -441,12 +450,12 @@ void lcd_update_rect(int x, int y, int width, int height)
         }
         while (--height > 0);
     }
-    lcd_unblock_and_update();
 #ifdef WAVEFORM_TELEMETRY_DISPLAY
     wf_event_record(WF_SUB_DISPLAY, WF_EVT_DISPLAY_LCD_END,
                     (uint32_t)(current_tick - wf_lcd_begin_tick),
                     0, 0, 0);
 #endif
+    lcd_unblock_and_update();
 }
 
 /* Update the display.
