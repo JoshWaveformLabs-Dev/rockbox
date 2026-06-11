@@ -189,6 +189,10 @@ ifeq (echor1,$(MODELNAME))
   include $(ROOTDIR)/tools/echoplayer/openocd.make
 endif
 
+# Enable --gc-sections for every link path that includes root.make.
+# fixedpoint.make's CORE_GCSECTIONS does not reach the rockbox.elf link.
+CORE_GCSECTIONS := yes
+
 # One or more subdir makefiles requested --gc-sections?
 ifdef CORE_GCSECTIONS
   # Do not use '--gc-sections' when compiling sdl-sim

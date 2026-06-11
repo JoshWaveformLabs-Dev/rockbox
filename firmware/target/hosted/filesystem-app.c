@@ -549,7 +549,7 @@ struct dirinfo dir_get_info(DIR *dirp, struct dirent *entry)
         FILE_ERROR_RETURN(ENAMETOOLONG, ret);
     }
 
-    struct stat s;
+    OS_STAT_T s;
     if (os_lstat(path, &s) < 0)
         FILE_ERROR_RETURN(ERRNO, ret);
 
