@@ -204,18 +204,6 @@ static void wf_buflib_update_floor_locked(uint32_t total_free, uint32_t largest_
     }
 }
 
-#ifdef WAVEFORM_TELEMETRY_DISPLAY
-/* S7-D4r: per-thread buflib alloc counters, consumed by the redraw-side
- * differencing in wf_display_redraw_begin()/wf_display_redraw_end().
- * Each slot has exactly one writer — its own thread, incrementing OUTSIDE
- * wf_buflib_note_alloc()'s IRQ-save critical section — and is read only
- * by that same thread at the redraw markers. The S7-D4 predecessor fired
- * its canary INSIDE the CS and was identified as the lcd-video.c BCM
- * panel-push race trigger under codec load (DECISIONS 2026-06-11
- * S7-D4 REWIND); D4r adds zero instructions to any IRQ-disabled window. */
-static uint32_t wf_alloc_count_by_thread[MAXTHREADS];
-#endif
-
 void wf_buflib_note_alloc(const char *tag, size_t size)
 {
     uint32_t hash = wf_fnv1a32(tag);
@@ -231,16 +219,6 @@ void wf_buflib_note_alloc(const char *tag, size_t size)
     cached_free = wf_buflib_state.last_total_free;
     first_sight = wf_tag_cache_observe_locked(hash);
     restore_irq(irq);
-
-#ifdef WAVEFORM_TELEMETRY_DISPLAY
-    /* S7-D4r: own-slot increment, deliberately after restore_irq() —
-     * see wf_alloc_count_by_thread block comment above. */
-    {
-        unsigned int slot = thread_self_slot();
-        if (slot < MAXTHREADS)
-            wf_alloc_count_by_thread[slot]++;
-    }
-#endif
 
     if (first_sight) {
         uint32_t nb, nc, nd;
@@ -746,25 +724,30 @@ void wf_storage_counters_get(struct wf_storage_counters *out)
  * polling at HZ/2 from the menu thread). */
 static struct wf_display_frame_t wf_display_frame;
 
-/* S7-D4r: WPS-redraw alloc attribution by redraw-side differencing.
- *   wf_alloc_snapshot_at_begin — the redraw thread's own
- *                                wf_alloc_count_by_thread[] value,
- *                                captured at REDRAW_BEGIN.
- *   wf_last_redraw_ticks — most recent REDRAW_END elapsed, stashed for
- *                          the WF: Display debug screen so it can show
- *                          the live redraw ms without ring decode.
+/* S7-D4r-zd: WPS-redraw alloc attribution by redraw-side differencing
+ * of the GLOBAL wf_buflib_state.alloc_count (Stage 4 D1 monotonic
+ * counter, incremented exactly once per wf_buflib_note_alloc() inside
+ * its existing disable_irq_save() window). The two redraw markers
+ * snapshot alloc_count at BEGIN / END and publish the difference into
+ * wf_display_frame.alloc_count_during_redraw — zero code on the buflib
+ * alloc path, zero new state, zero new IRQ-save windows.
  *
- * No volatile, no IRQ save, no membarrier: the counter slot being
- * differenced is written only by its owning thread (outside any CS) and
- * both redraw markers run on that same thread within one skin_render()
- * invocation — single-thread data flow end to end on uniprocessor
- * PP502x. Cross-thread allocs landing while a redraw is in flight bump
- * their own slots and are invisible to the diff, which preserves the
- * S7-D4 tid-filter semantics without any code on another thread's
- * alloc path. The debug screen reads alloc_count_during_redraw as an
- * aligned word from the menu thread — atomic on ARM, the same
- * single-producer/single-consumer pattern as the rest of
- * wf_display_frame. */
+ * Diff semantic: "any thread's buflib allocs during the redraw window".
+ * Diverges from D4's per-thread variant: cross-thread allocs (codec /
+ * buffering) landing inside the window now count, whereas D4 filtered
+ * them out via thread_self_slot(). Acceptable: D4r hardware confirmed
+ * steady-state wpsAlloc=0, so the healthy reading is identical; when
+ * other-thread allocs DO happen mid-redraw (rare per Stage 4 Finding
+ * A) surfacing them is more informative for future tuning, not less.
+ *
+ * No volatile / IRQ save / membarrier needed on the BEGIN / END reads:
+ * uint32_t aligned LDR is atomic on ARM, so the reader observes either
+ * a pre- or post-increment alloc_count value relative to any racing
+ * writer — both are correct for the BEGIN→END subtraction (a racing
+ * increment falls into this window's diff or the next one's, never
+ * lost, never double-counted). Same single-producer / single-consumer
+ * pattern that the rest of wf_display_frame already uses for the
+ * menu-thread debug-screen read. */
 static uint32_t wf_alloc_snapshot_at_begin;
 static uint32_t wf_last_redraw_ticks;
 
@@ -798,17 +781,13 @@ void wf_display_frame_note_glyph_miss(void)
 
 void wf_display_redraw_begin(void)
 {
-    unsigned int slot = thread_self_slot();
-    wf_alloc_snapshot_at_begin =
-        (slot < MAXTHREADS) ? wf_alloc_count_by_thread[slot] : 0;
+    wf_alloc_snapshot_at_begin = wf_buflib_state.alloc_count;
 }
 
 void wf_display_redraw_end(uint32_t elapsed_ticks)
 {
-    unsigned int slot = thread_self_slot();
-    uint32_t now =
-        (slot < MAXTHREADS) ? wf_alloc_count_by_thread[slot] : 0;
-    /* Unsigned subtraction is wrap-correct even across counter rollover. */
+    uint32_t now = wf_buflib_state.alloc_count;
+    /* Unsigned subtraction is wrap-correct across counter rollover. */
     wf_display_frame.alloc_count_during_redraw =
         now - wf_alloc_snapshot_at_begin;
     wf_last_redraw_ticks = elapsed_ticks;
