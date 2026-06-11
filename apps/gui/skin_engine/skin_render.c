@@ -864,9 +864,15 @@ void skin_render(struct gui_wps *gwps, unsigned refresh_mode)
     /* S7-D2: open the redraw window. Reset the per-frame accumulator
      * (dirty_area_pixels / glyphs_rasterised / alloc_count_during_redraw)
      * so this frame's sums start clean; emit BEGIN with the caller-supplied
-     * refresh_mode. End event closes the window after display->update(). */
+     * refresh_mode. End event closes the window after display->update().
+     *
+     * S7-D4r: wf_display_redraw_begin() additionally snapshots this
+     * thread's own buflib alloc counter; wf_display_redraw_end()
+     * publishes the BEGIN→END difference as alloc_count_during_redraw
+     * (redraw-side differencing — no canary on the buflib alloc CS). */
     long wf_redraw_begin_tick = current_tick;
     wf_display_frame_reset();
+    wf_display_redraw_begin();
     wf_event_record(WF_SUB_DISPLAY, WF_EVT_DISPLAY_REDRAW_BEGIN,
                     (uint32_t)refresh_mode, 0, 0, 0);
 #endif
@@ -962,12 +968,20 @@ void skin_render(struct gui_wps *gwps, unsigned refresh_mode)
 #ifdef WAVEFORM_TELEMETRY_DISPLAY
     /* S7-D2: close the redraw window. Elapsed ticks measured from the
      * BEGIN stamp; remaining payload fields read the per-frame accumulator
-     * populated by the viewport hook above + (D3) the glyph cache hooks. */
+     * populated by the viewport hook above + (D3) the glyph cache hooks.
+     *
+     * S7-D4r: wf_display_redraw_end() PUBLISHES alloc_count_during_redraw
+     * (per-thread counter diff vs the BEGIN snapshot), so it must run
+     * BEFORE wf_display_frame_get() / the END event_record — the inverse
+     * of the S7-D4 ordering, whose canary counted live and only cleared
+     * a flag here. */
     {
         struct wf_display_frame_t wf_f;
+        uint32_t wf_elapsed = (uint32_t)(current_tick - wf_redraw_begin_tick);
+        wf_display_redraw_end(wf_elapsed);
         wf_display_frame_get(&wf_f);
         wf_event_record(WF_SUB_DISPLAY, WF_EVT_DISPLAY_REDRAW_END,
-                        (uint32_t)(current_tick - wf_redraw_begin_tick),
+                        wf_elapsed,
                         wf_f.dirty_area_pixels,
                         wf_f.glyphs_rasterised,
                         wf_f.alloc_count_during_redraw);

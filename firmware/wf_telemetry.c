@@ -204,6 +204,18 @@ static void wf_buflib_update_floor_locked(uint32_t total_free, uint32_t largest_
     }
 }
 
+#ifdef WAVEFORM_TELEMETRY_DISPLAY
+/* S7-D4r: per-thread buflib alloc counters, consumed by the redraw-side
+ * differencing in wf_display_redraw_begin()/wf_display_redraw_end().
+ * Each slot has exactly one writer — its own thread, incrementing OUTSIDE
+ * wf_buflib_note_alloc()'s IRQ-save critical section — and is read only
+ * by that same thread at the redraw markers. The S7-D4 predecessor fired
+ * its canary INSIDE the CS and was identified as the lcd-video.c BCM
+ * panel-push race trigger under codec load (DECISIONS 2026-06-11
+ * S7-D4 REWIND); D4r adds zero instructions to any IRQ-disabled window. */
+static uint32_t wf_alloc_count_by_thread[MAXTHREADS];
+#endif
+
 void wf_buflib_note_alloc(const char *tag, size_t size)
 {
     uint32_t hash = wf_fnv1a32(tag);
@@ -219,6 +231,16 @@ void wf_buflib_note_alloc(const char *tag, size_t size)
     cached_free = wf_buflib_state.last_total_free;
     first_sight = wf_tag_cache_observe_locked(hash);
     restore_irq(irq);
+
+#ifdef WAVEFORM_TELEMETRY_DISPLAY
+    /* S7-D4r: own-slot increment, deliberately after restore_irq() —
+     * see wf_alloc_count_by_thread block comment above. */
+    {
+        unsigned int slot = thread_self_slot();
+        if (slot < MAXTHREADS)
+            wf_alloc_count_by_thread[slot]++;
+    }
+#endif
 
     if (first_sight) {
         uint32_t nb, nc, nd;
@@ -721,8 +743,30 @@ void wf_storage_counters_get(struct wf_storage_counters *out)
 
 /* File-scope accumulator. Single producer in steady state (WPS thread
  * between REDRAW_BEGIN and REDRAW_END), single consumer (debug-menu screen
- * polling at HZ/2 from the menu thread). 28 bytes of BSS. */
+ * polling at HZ/2 from the menu thread). */
 static struct wf_display_frame_t wf_display_frame;
+
+/* S7-D4r: WPS-redraw alloc attribution by redraw-side differencing.
+ *   wf_alloc_snapshot_at_begin — the redraw thread's own
+ *                                wf_alloc_count_by_thread[] value,
+ *                                captured at REDRAW_BEGIN.
+ *   wf_last_redraw_ticks — most recent REDRAW_END elapsed, stashed for
+ *                          the WF: Display debug screen so it can show
+ *                          the live redraw ms without ring decode.
+ *
+ * No volatile, no IRQ save, no membarrier: the counter slot being
+ * differenced is written only by its owning thread (outside any CS) and
+ * both redraw markers run on that same thread within one skin_render()
+ * invocation — single-thread data flow end to end on uniprocessor
+ * PP502x. Cross-thread allocs landing while a redraw is in flight bump
+ * their own slots and are invisible to the diff, which preserves the
+ * S7-D4 tid-filter semantics without any code on another thread's
+ * alloc path. The debug screen reads alloc_count_during_redraw as an
+ * aligned word from the menu thread — atomic on ARM, the same
+ * single-producer/single-consumer pattern as the rest of
+ * wf_display_frame. */
+static uint32_t wf_alloc_snapshot_at_begin;
+static uint32_t wf_last_redraw_ticks;
 
 void wf_display_frame_reset(void)
 {
@@ -742,6 +786,37 @@ void wf_display_frame_note_dirty(uint32_t pixels)
 void wf_display_frame_note_glyph(void)
 {
     wf_display_frame.glyphs_rasterised += 1;
+}
+
+void wf_display_frame_note_glyph_miss(void)
+{
+    /* S7-D4: bump BOTH so the rasterised total stays correct and the
+     * MISS sub-count is independently readable from the debug screen. */
+    wf_display_frame.glyphs_rasterised += 1;
+    wf_display_frame.glyphs_missed     += 1;
+}
+
+void wf_display_redraw_begin(void)
+{
+    unsigned int slot = thread_self_slot();
+    wf_alloc_snapshot_at_begin =
+        (slot < MAXTHREADS) ? wf_alloc_count_by_thread[slot] : 0;
+}
+
+void wf_display_redraw_end(uint32_t elapsed_ticks)
+{
+    unsigned int slot = thread_self_slot();
+    uint32_t now =
+        (slot < MAXTHREADS) ? wf_alloc_count_by_thread[slot] : 0;
+    /* Unsigned subtraction is wrap-correct even across counter rollover. */
+    wf_display_frame.alloc_count_during_redraw =
+        now - wf_alloc_snapshot_at_begin;
+    wf_last_redraw_ticks = elapsed_ticks;
+}
+
+uint32_t wf_display_last_redraw_ticks(void)
+{
+    return wf_last_redraw_ticks;
 }
 
 #endif /* WAVEFORM_TELEMETRY_DISPLAY */

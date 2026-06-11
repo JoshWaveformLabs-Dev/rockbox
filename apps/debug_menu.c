@@ -3042,6 +3042,77 @@ static bool dbg_wf_storage(void)
 }
 #endif /* WAVEFORM_TELEMETRY_STORAGE */
 
+#ifdef WAVEFORM_TELEMETRY_DISPLAY
+/* S7-D4: WF: Display debug screen. Mirrors the dbg_wf_buflib shape
+ * (HZ/2 poll, FONT_SYSFIXED, FOR_NB_SCREENS). The four WSE2 sizing
+ * inputs from the misty-truffle plan are surfaced live:
+ *   redraw — most recent REDRAW_BEGIN..END elapsed, ticks → ms
+ *   dirty  — union dirty-area pixels / (LCD_WIDTH * LCD_HEIGHT)
+ *   glyph  — hit / miss (hit = rasterised - missed)
+ *   wpsAlloc — buflib allocs made by the redraw thread across the most
+ *              recent BEGIN..END window (S7-D4r differencing, published
+ *              at REDRAW_END)
+ *   cpuMHz — live cpu_frequency; the locked S6.3 bench MHz lives in
+ *            docs/research/S6.3-D5_native_bench_baseline*.txt. */
+static bool dbg_wf_display(void)
+{
+    int button;
+    bool done = false;
+    FOR_NB_SCREENS(i)
+        screens[i].setfont(FONT_SYSFIXED);
+    while (!done)
+    {
+        struct wf_display_frame_t f;
+        uint32_t redraw_ticks, lcd_pixels, dirty_pct_x100;
+        uint32_t hits, miss;
+        /* cpu_frequency (firmware/system.c, declared in system.h) is the
+         * single source of truth: HAVE_ADJUSTABLE_CPU_FREQ targets update
+         * it on every set_cpu_frequency(); static targets keep the CPU_FREQ
+         * initial value; sim builds without a defined CPU_FREQ leave it
+         * at the -1 fallback. Treat <=0 as "unavailable" and show "—". */
+        long cpu_hz = cpu_frequency;
+        button = get_action(CONTEXT_STD, HZ/2);
+        if (button == ACTION_STD_CANCEL)
+            done = true;
+        wf_display_frame_get(&f);
+        redraw_ticks = wf_display_last_redraw_ticks();
+        lcd_pixels = (uint32_t)LCD_WIDTH * (uint32_t)LCD_HEIGHT;
+        dirty_pct_x100 = lcd_pixels
+            ? (uint32_t)((uint64_t)f.dirty_area_pixels * 10000u / lcd_pixels)
+            : 0;
+        miss = f.glyphs_missed;
+        hits = (f.glyphs_rasterised >= miss)
+               ? (f.glyphs_rasterised - miss) : 0;
+        FOR_NB_SCREENS(i)
+        {
+            int line = 0;
+            screens[i].clear_display();
+            screens[i].putsf(0, line++, "WF Display");
+            /* HZ ticks → ms: ticks * 1000 / HZ. HZ=100 on PP. */
+            screens[i].putsf(0, line++, "redraw:%lums",
+                             (unsigned long)(redraw_ticks * 1000u / HZ));
+            screens[i].putsf(0, line++, "dirty:%lu.%02lu%%",
+                             (unsigned long)(dirty_pct_x100 / 100),
+                             (unsigned long)(dirty_pct_x100 % 100));
+            screens[i].putsf(0, line++, "glyph h:%lu m:%lu",
+                             (unsigned long)hits,
+                             (unsigned long)miss);
+            screens[i].putsf(0, line++, "wpsAlloc:%lu",
+                             (unsigned long)f.alloc_count_during_redraw);
+            if (cpu_hz > 0)
+                screens[i].putsf(0, line++, "cpuMHz:%lu",
+                                 (unsigned long)(cpu_hz / 1000000));
+            else
+                screens[i].putsf(0, line++, "cpuMHz:--");
+            screens[i].update();
+        }
+    }
+    FOR_NB_SCREENS(i)
+        screens[i].setfont(FONT_UI);
+    return false;
+}
+#endif /* WAVEFORM_TELEMETRY_DISPLAY */
+
 /* S4-D2: dump the raw wf_event ring to a .bin file for offline decode
  * with scripts/wf-trace-decode.py. The full WF_EVENT_RING_SIZE worth
  * of bytes is written; the splashf line reports count + head so the
@@ -3426,6 +3497,9 @@ static const struct {
 #endif
 #ifdef WAVEFORM_TELEMETRY_STORAGE
         {"WF: Storage", dbg_wf_storage },
+#endif
+#ifdef WAVEFORM_TELEMETRY_DISPLAY
+        {"WF: Display", dbg_wf_display },
 #endif
         {"WF: Ring dump", dbg_wf_ring_dump },
 #endif /* WAVEFORM_TELEMETRY */

@@ -65,8 +65,13 @@
 
 /* Waveform OS post-m9 Stage 1 instrumentation. Engineering builds only.
  * Production builds: comment out the WAVEFORM_TELEMETRY line — every hook
- * is #ifdef-gated and falls through to zero-cost. */
+ * is #ifdef-gated and falls through to zero-cost.
+ * __PCTOOL__ guard (S7-D4r): host tools (warble) compile firmware files
+ * like buflib_mempool.c against this config but do not link
+ * wf_telemetry.c — telemetry must stay off there or the link fails. */
+#ifndef __PCTOOL__
 #define WAVEFORM_TELEMETRY
+#endif
 #ifdef WAVEFORM_TELEMETRY
 #define WAVEFORM_TELEMETRY_BUFLIB
 #define WAVEFORM_TELEMETRY_PCMBUF

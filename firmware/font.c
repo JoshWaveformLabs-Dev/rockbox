@@ -741,12 +741,17 @@ load_cache_entry(struct font_cache_entry* p, void* callback_data)
     /* S7-D3: glyph cache miss — the renderer asked for a glyph not in
      * cache so we are about to read it from the font file. Payload:
      * a=char_code, b=cache_capacity (in entries), c=font buflib handle
-     * (opaque font id; serialises 1:1 with apps/gui/font.c slot). */
+     * (opaque font id; serialises 1:1 with apps/gui/font.c slot).
+     *
+     * S7-D4: _note_glyph_miss() bumps BOTH glyphs_rasterised (so the
+     * total stays correct vs the HIT path at font_cache.c) AND the
+     * glyphs_missed sub-count, so the WF: Display debug screen can
+     * surface hit/miss as two live numbers without ring decode. */
     wf_event_record(WF_SUB_DISPLAY, WF_EVT_DISPLAY_GLYPH_MISS,
                     (uint32_t)p->_char_code,
                     (uint32_t)pf->cache._capacity,
                     (uint32_t)pf->handle, 0);
-    wf_display_frame_note_glyph();
+    wf_display_frame_note_glyph_miss();
 #endif
 
     ucschar_t char_code = p->_char_code;

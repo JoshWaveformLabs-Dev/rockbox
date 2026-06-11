@@ -361,17 +361,22 @@ void wf_storage_counters_get(struct wf_storage_counters *out);
 
 /* Per-frame accumulator. Reset at WF_EVT_DISPLAY_REDRAW_BEGIN; sampled at
  * WF_EVT_DISPLAY_REDRAW_END. glyphs_rasterised counts every glyph drawn
- * during the redraw window (font_cache HIT + MISS both increment); the
- * MISS sub-count rides the WF_EVT_DISPLAY_GLYPH_MISS event payload.
+ * during the redraw window (font_cache HIT + MISS both increment).
+ * glyphs_missed (S7-D4) counts only the MISS path so the WF: Display
+ * debug screen can show hit / miss as two live numbers without offline
+ * ring decode (hit = rasterised - missed).
  * dirty_area_pixels accumulates viewport width*height for every dirty
  * viewport touched during the redraw — used as the "union dirty area"
  * baseline for WSE2 dirty-rect sizing. alloc_count_during_redraw is
- * bumped by the buflib alloc hook when wf_in_wps_redraw is set
- * (D4 wires this — the field exists at D1 for declaration stability).
+ * published at REDRAW_END by wf_display_redraw_end() as the difference
+ * of the redraw thread's own per-thread buflib alloc counter across the
+ * BEGIN/END window (S7-D4r redraw-side differencing — no canary code
+ * inside wf_buflib_note_alloc()'s IRQ-save critical section).
  * redraw_begin_tick is set on REDRAW_BEGIN so REDRAW_END can compute
  * elapsed without polling current_tick a second time. */
 struct wf_display_frame_t {
     uint32_t glyphs_rasterised;
+    uint32_t glyphs_missed;
     uint32_t dirty_area_pixels;
     uint32_t alloc_count_during_redraw;
     uint32_t redraw_begin_tick;
@@ -395,9 +400,36 @@ void wf_display_frame_note_dirty(uint32_t pixels);
 /* S7-D3: per-glyph rasterisation notification. Called once per
  * font_cache_get() hit AND once per load_cache_entry() miss — both paths
  * are "a glyph was supplied to the renderer". Sum read at REDRAW_END as
- * field c. MISS sub-count is recoverable from the WF_EVT_DISPLAY_GLYPH_MISS
- * event stream (no separate counter needed). */
+ * field c. The MISS path uses wf_display_frame_note_glyph_miss() below
+ * which bumps both the rasterised total AND the miss sub-count so the
+ * total stays correct. */
 void wf_display_frame_note_glyph(void);
+
+/* S7-D4: glyph MISS notification. Increments BOTH glyphs_rasterised AND
+ * glyphs_missed. Called from font.c load_cache_entry() in place of
+ * wf_display_frame_note_glyph() so the WF: Display debug screen can show
+ * hit / miss as two numbers (hit = rasterised - missed). The font_cache.c
+ * HIT site continues to call _note_glyph() unchanged. */
+void wf_display_frame_note_glyph_miss(void);
+
+/* S7-D4r: WPS-redraw alloc attribution by redraw-side differencing.
+ * wf_display_redraw_begin() snapshots the calling thread's own per-thread
+ * buflib alloc counter; wf_display_redraw_end() publishes the difference
+ * into wf_display_frame.alloc_count_during_redraw and stashes
+ * elapsed_ticks for wf_display_last_redraw_ticks(). The per-thread
+ * counter is incremented by wf_buflib_note_alloc() AFTER its IRQ-save
+ * critical section is released — zero instructions added to any
+ * IRQ-disabled window (the S7-D4 in-CS canary was identified as the
+ * lcd-video.c BCM race trigger under codec load). Neither helper takes
+ * an IRQ save: the counter slot is single-writer (its own thread) and
+ * both markers run on that same thread inside one skin_render()
+ * invocation. Cross-thread allocs during the window land in their own
+ * slots and stay out of the diff, preserving the tid-filter semantics.
+ * Called from skin_render() alongside the D2 REDRAW_BEGIN/END
+ * wf_event_record() emissions. */
+void wf_display_redraw_begin(void);
+void wf_display_redraw_end(uint32_t elapsed_ticks);
+uint32_t wf_display_last_redraw_ticks(void);
 
 #endif /* WAVEFORM_TELEMETRY_DISPLAY */
 
